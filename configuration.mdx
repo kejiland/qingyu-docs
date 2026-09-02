@@ -85,10 +85,13 @@ window.BLOG_CONFIG = {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `enabled` | `boolean` | 总开关 |
+| `client` | `string` | AdSense 发布商 ID（`ca-pub-xxxx`）。`enabled` 且配置了 `client` 时，前端自动把官方库脚本 `adsbygoogle.js` 注入到 `<head>`（等价于在 `<head>` 中放置 AdSense 提供的脚本），无需手动改 HTML |
 | `belowSearch` | `string` | 首页列表上方 HTML |
 | `between` | `string` | 列表间隔插入 HTML |
 | `betweenEvery` | `number` | 每 N 篇插入（默认 3） |
 | `content` | `string` | 文章详情底部 HTML |
+
+> **广告位填写方式**：`belowSearch` / `between` / `content` 填入 AdSense 生成的广告单元完整代码（形如 `<ins class="adsbygoogle" ...></ins><script>(adsbygoogle=window.adsbygoogle||[]).push({})</script>`）。库脚本已由 `client` 自动加载，广告位代码里**只需** `<ins>` + `push` 即可，不要再重复引入 `adsbygoogle.js`。未启用（`enabled: false`）时不加载任何第三方脚本。
 
 ## 路由
 
