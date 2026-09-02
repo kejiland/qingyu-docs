@@ -99,8 +99,8 @@
       "permanent": true
     },
     {
-      "source": "/docs/*",
-      "destination": "/*",
+      "source": "/docs/:path*",
+      "destination": "/:path*",
       "permanent": true
     }
   ]
