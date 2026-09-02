@@ -86,5 +86,22 @@
     "socials": {
       "github": "https://github.com/kejiland/qingyu-blog"
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/introduction",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/docs/introduction",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/docs/*",
+      "destination": "/*",
+      "permanent": true
+    }
+  ]
 }
