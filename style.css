@@ -1,0 +1,13 @@
+/* Qingyu'Blog Docs - 自定义样式 */
+/* Mintlify 自动加载内容目录中的 .css 文件到每个页面 */
+
+/* 隐藏顶部栏的 "Ask Assistant ⌘ I" AI 助手按钮（桌面端 + 移动端） */
+#assistant-entry,
+#assistant-entry-mobile {
+  display: none !important;
+}
+
+/* 隐藏代码块上的 "Ask Assistant" 按钮 */
+#ask-assistant-code-block-button {
+  display: none !important;
+}
