@@ -73,7 +73,7 @@ window.BLOG_CONFIG = {
 |------|------|------|
 | `text` | `string` | 页脚自定义文字 |
 | `icp` | `string` | 备案号 |
-| `contact` | `Array` | 联系方式列表 `{text, url}` |
+| `contact` | `Array` | **页脚导航**链接 `{text, url}`：底部导航栏的链接列表，可自由增删；站内路径（如 `/tags`）自动带部署前缀，外部链接（`https://...`）自动新窗口打开。未配置时回退为站点主导航 |
 | `links` | `Array` | 友情链接列表 `{text, url}` |
 | `decl` | `string` | 站点声明 |
 | `email` | `string` | 联系邮箱 |
@@ -101,5 +101,5 @@ window.BLOG_CONFIG = {
 | `/about` | 关于 |
 | `/tags` | 标签云 |
 | `/posts/<别名>/` | 文章详情 |
-| `/admin` | 管理后台 |
-| `/write` | 写作台 |
+| `/admin` | 管理后台（页脚导航显示为「后台」，仅管理员可见） |
+| `/write` | 写作台（/admin 的别名） |
