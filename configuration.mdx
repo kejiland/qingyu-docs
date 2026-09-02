@@ -93,6 +93,46 @@ window.BLOG_CONFIG = {
 
 > **广告位填写方式**：`belowSearch` / `between` / `content` 填入 AdSense 生成的广告单元完整代码（形如 `<ins class="adsbygoogle" ...></ins><script>(adsbygoogle=window.adsbygoogle||[]).push({})</script>`）。库脚本已由 `client` 自动加载，广告位代码里**只需** `<ins>` + `push` 即可，不要再重复引入 `adsbygoogle.js`。未启用（`enabled: false`）时不加载任何第三方脚本。
 
+### 自动广告设置示例
+
+本项目的广告采用「**广告单元 + 自动插位**」模式：你在 config 里把广告单元代码放进几个广告槽，系统会**自动**在这些位置渲染（无需手动指定每一处）。这是 SPA（前端 JS 渲染）博客最稳定可靠的方案。
+
+**第 1 步：AdSense 后台创建广告单元**
+1. 登录 AdSense → **广告** → **按广告单元** → **新建** → 选择「展示广告」
+2. 生成代码后，记下其中的 `data-ad-slot` 值（即广告位 ID）：
+   ```html
+   <ins class="adsbygoogle"
+        style="display:block"
+        data-ad-client="ca-pub-4096395942817870"
+        data-ad-slot="1234567890"   <!-- 这就是你要的 SLOT_ID -->
+        data-ad-format="auto"
+        data-full-width-responsive="true"></ins>
+   <script>(adsbygoogle = window.adsbygoogle || []).push({})</script>
+   ```
+
+**第 2 步：填入 `config.js` 的 `ads`**
+```js
+ads: {
+  enabled: true,   // ← 改为 true 才显示
+  client: 'ca-pub-4096395942817870',
+  belowSearch: '<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-4096395942817870" data-ad-slot="1234567890" data-ad-format="auto" data-full-width-responsive="true"></ins><script>(adsbygoogle = window.adsbygoogle || []).push({})</script>',
+  between:     '<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-4096395942817870" data-ad-slot="1234567890" data-ad-format="auto" data-full-width-responsive="true"></ins><script>(adsbygoogle = window.adsbygoogle || []).push({})</script>',
+  betweenEvery: 3,   // 首页列表每 3 篇插入一个 between 广告
+  content:     '<ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-4096395942817870" data-ad-slot="1234567890" data-ad-format="auto" data-full-width-responsive="true"></ins><script>(adsbygoogle = window.adsbygoogle || []).push({})</script>'
+}
+```
+把三处的 `1234567890` 换成你自己的 `data-ad-slot`，三个位置可共用同一 slot，也可创建不同单元区分。
+
+**广告自动出现的位置**
+- `belowSearch` → 首页搜索框下方
+- `between` → 首页列表**每 `betweenEvery` 篇自动插入一个**（如 `betweenEvery: 3` = 每 3 篇插一个，无需手动指定位置）
+- `content` → 文章详情底部
+
+**注意事项**
+- `enabled` 必须为 `true` 广告才显示（默认 `false` 是占位保护，避免无效 slot 请求）。
+- 广告位代码里**只放** `<ins>` + `push({})`，**不要**再贴 `adsbygoogle.js` 库脚本 —— 它已由 `client` 字段自动注入 `<head>`。
+- 想只在文章底部放广告：把 `belowSearch` / `between` 留空、`content` 填代码即可；想调列表广告密度改 `betweenEvery`。
+
 ## 路由
 
 所有路由为真实路径，无 hash：
