@@ -1,68 +1,57 @@
 ---
-title: "安全设计"
-description: "多层安全防护体系"
+title: "API 总览"
+description: "全部 REST 接口的分组、鉴权与错误码约定"
 ---
 
-## 安全架构
+## 接口分组
 
-```mermaid
-graph TB
-    A[用户请求] --> B[CORS 校验]
-    B --> C[路由匹配]
-    C --> D{认证检查}
-    D -->|需要| E[Token 校验]
-    D -->|公开| F[业务逻辑]
-    E -->|通过| F
-    E -->|失败| G[401]
-    F --> H[参数验证]
-    H --> I[SQL 参数化]
-    I --> J[D1 数据库]
-    F --> K[频率限制]
-    K -->|超限| L[429]
+| 分组 | 端点 | 鉴权 | 说明 |
+|------|------|------|------|
+| 文章 | `GET/POST /api/posts`、`GET/PUT/DELETE /api/posts/:id` | 写操作需要 | 文章 CRUD，支持加密 / 置顶 / 分类 |
+| 评论 | `GET/POST /api/posts/:id/comments`、`PUT/DELETE /api/comments/:id` | 发表公开；审核删除需要 | 嵌套回复、审核模式、重复拦截 |
+| 留言板 | 复用评论接口（`:id` = `gb-note` / `gb-idea`） | 同评论 | 见[留言板](/guestbook) |
+| 统计 | `GET/POST /api/posts/:id/stats` | 公开 | 阅读数 / 点赞 |
+| 媒体 | `GET/POST /api/media`、`DELETE /api/media/:id` | 需要 | 图片上传（base64 存 D1） |
+| 设置 | `GET/PUT /api/settings` | 读取公开 | 站点信息 / 导航 / 资料 |
+| 管理认证 | `/api/admin/*`（setup / login / logout / password） | — | 首次设密 / 登录 / 登出 / 改密 |
+| 站点产物 | `GET/POST /api/site-files`、`GET /api/site-files/:name` | 写入需要 | feed.xml / sitemap.xml / posts.js |
+| Feed | `GET /api/feed.xml`、`GET /api/sitemap.xml` | 公开 | RSS 与站点地图，实时生成 |
+
+<Info>
+各端点的完整请求/响应示例见「API 参考」分组下的对应页面。
+</Info>
+
+## 鉴权方式
+
+所有需要鉴权的接口通过 HTTP Header 传递会话令牌：
+
+```http
+Authorization: Bearer <token>
 ```
 
-## 密码安全
+令牌由 `/api/admin/login` 签发（32 字节随机 hex，7 天有效），前端存于 `localStorage` 并由 `apiFetch` 自动附带。
 
-| 算法 | 说明 |
-|------|------|
-| PBKDF2-SHA256 | 密码派生函数 |
-| 加盐 | 每次生成随机盐值 |
-| 100,000 次迭代 | 暴力破解成本极高 |
-| 零明文 | 永不存储/传输明文 |
+## 错误码约定
 
-## 会话管理
+| 状态码 | 场景 |
+|--------|------|
+| `400` | 参数缺失 / 非法 / 超限 |
+| `401` | 未登录或会话过期 |
+| `403` | Origin 校验失败（跨站写请求） |
+| `404` | 资源不存在；未知 `/api/*` 路径同样返回 JSON 404（绝不回退到 SPA 页面） |
+| `405` | 方法不允许 |
+| `409` | 内容冲突——当前用于**评论 / 留言重复发送拦截**（同分区同昵称同内容） |
+| `429` | 频率限制（评论每 IP 每分钟 5 条） |
 
-| 特性 | 说明 |
-|------|------|
-| Token | 32 字节随机 hex |
-| 有效期 | 7 天 |
-| 存储 | D1 `admin_sessions` 表 |
-| 客户端 | 浏览器 `localStorage` |
-| 传输 | `Authorization: Bearer <token>` |
+**错误响应统一格式：**
 
-## 登录限流
+```json
+{ "error": "人类可读的中文提示" }
+```
 
-| 参数 | 值 |
-|------|-----|
-| 触发 | 同一 IP 连续失败 5 次 |
-| 锁定 | 15 分钟 |
+前端 `apiFetch` 会把 `error` 字段解析为异常消息直接展示给用户（如「请勿重复发送相同内容」），不再只显示 HTTP 状态码。
 
-## 接口安全
+## CORS 与缓存
 
-| 机制 | 说明 |
-|------|------|
-| CORS | 配置 `SITE_URL` 后仅允许本站 |
-| 接口边界 | 未知 `/api/*` 返回 JSON 404 |
-| XSS 防护 | 用户输入自动转义 |
-| SQL 注入 | 参数化查询 |
-| 缓存安全 | 写操作 `no-store` |
-
-## 文章加密
-
-详见 [文章加密](/security/encryption)。
-
-## 报告漏洞
-
-<Warning>
-请勿通过公开 Issue 报告安全漏洞。请通过 GitHub [@kejiland](https://github.com/kejiland) 私信联系维护者。
-</Warning>
+- **CORS**：配置 `SITE_URL` 后仅回显本站来源；未配置时回显请求来源。跨站写请求会被 403。
+- **缓存**：只读接口 `s-maxage=60`，RSS/Sitemap `s-maxage=300`，写操作一律 `no-store`。详见[项目架构 · 缓存策略](/architecture)。
