@@ -31,9 +31,9 @@ GET /api/settings
 |-----|------|------|
 | `siteName` | `string` | 站点名称 |
 | `siteDesc` | `string` | 站点简介 |
-| `avatar` | `string` | 头像 URL |
+| `avatar` | `string` | 站点头像 URL（同时用作 favicon 与后台左上角品牌 Logo） |
 | `nav` | `array` | 导航菜单 |
-| `profile` | `object` | 个人资料 |
+| `profile` | `object` | 个人资料（`name` / `bio` / `avatar` / `email`；`avatar` 显示在后台左下角） |
 | `commentModeration` | `boolean` | 评论审核开关 |
 
 ## 更新设置

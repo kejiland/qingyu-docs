@@ -17,7 +17,7 @@ CREATE TABLE posts (
   protected   INTEGER DEFAULT 0,      -- 加密
   enc         TEXT,                   -- 加密数据 JSON
   tags        TEXT,                   -- 标签 JSON 数组
-  category    TEXT DEFAULT '',        -- 分类
+  category    TEXT DEFAULT '',        -- 分类（产品端已移除分类功能，该列保留兼容）
   status      TEXT DEFAULT 'published', -- 状态
   created_at  TEXT DEFAULT '',
   updated_at  TEXT DEFAULT ''
