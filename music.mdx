@@ -1,0 +1,140 @@
+---
+title: "音乐"
+description: "全站播放器与后台音乐管理（R2 直传）"
+---
+
+前台右下角的**全站音乐播放器** + 后台「音乐管理」页（R2 直传、文件名识别、同步删除）。
+
+## 前台播放器
+
+- **悬浮按钮**：右下角圆形音符按钮，平时**缩进窗口外露出一点圆弧**，悬停 / 点击即滑出
+- **弹出面板**：点击按钮弹出卡片面板 —— 曲目信息 · 可拖动进度条 · 上一首 / 播放暂停 / 下一首 · 音量 · 播放列表（点击切换、当前曲目高亮 + 均衡动画）；点面板外部或 ✕ 收起
+- **记忆**：自动连播；记忆上次曲目与进度、音量持久化（`localStorage`），刷新后恢复但不自动出声
+- **自适应**：无音乐或接口失败时完全隐藏；后台路由（`/admin`、`/write`、编辑页）自动收起
+
+## 后台音乐管理
+
+- **上传**：选择 / 拖拽音频文件，浏览器**直传 R2**（预签名 URL），显示上传进度；选择文件后按文件名自动识别**「歌曲名-歌手」**预填输入框
+- **列表**：行内试听 / 删除（删除与 R2 对象同步）；曲目多时列表**卡片内滚动、表头吸顶**，上传区不随列表滚走
+- 管理端列表请求带 `?_=<时间戳>` 穿透 `s-maxage` 边缘缓存，增删即时可见
+
+## 上传架构（R2 直传）
+
+```
+浏览器 ──POST /api/music/upload-url──> Worker（SigV4 签名）
+浏览器 ──PUT（预签名 URL）──────────> R2（文件不经过 Worker）
+浏览器 ──POST /api/music（注册元数据）─> D1 music 表
+```
+
+- 音频文件**不经过 Worker**，规避请求体上限与带宽计费（R2 egress 免费）
+- 环境变量：`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` / `R2_PUBLIC_BASE`
+- 格式白名单：mp3 / m4a / ogg / wav / aac / opus / flac，单文件 ≤ 30MB
+- **降级**：未配置 R2 凭据时，读取播放列表仍可用（D1），上传返回 `503`
+
+## API
+
+### 获取播放列表（公开）
+
+```http
+GET /api/music
+```
+
+**响应：**
+
+```json
+{
+  "ok": true,
+  "music": [
+    {
+      "id": "曲目ID",
+      "title": "起风了",
+      "artist": "买辣椒也用券",
+      "url": "https://music.example.com/music/xxx.mp3",
+      "size": 13107200,
+      "duration": 0,
+      "sort": 0
+    }
+  ]
+}
+```
+
+<Info>
+只读接口带 `s-maxage=60` 边缘缓存；管理后台以 `?_=<时间戳>` 穿透缓存取最新列表。
+</Info>
+
+### 签发预签名上传 URL（需登录）
+
+```http
+POST /api/music/upload-url
+Authorization: Bearer <token>
+```
+
+**请求体：**
+
+```json
+{
+  "name": "起风了-买辣椒也用券.mp3",
+  "size": 13107200
+}
+```
+
+**响应：**
+
+```json
+{
+  "ok": true,
+  "uploadUrl": "https://<R2端点>/music/xxx.mp3?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "publicUrl": "https://music.example.com/music/xxx.mp3",
+  "contentType": "audio/mpeg",
+  "expiresIn": 3600
+}
+```
+
+- 预签名 URL 有效期 1 小时，SigV4 + `UNSIGNED-PAYLOAD`
+- 浏览器拿到后直接 `PUT` 上传（`Content-Type` 与响应一致）；上传失败时调用删除接口清理孤儿对象（幂等）
+
+### 注册曲目（需登录）
+
+```http
+POST /api/music
+Authorization: Bearer <token>
+```
+
+**请求体：**
+
+```json
+{
+  "id": "xxx",
+  "title": "起风了",
+  "artist": "买辣椒也用券",
+  "url": "https://music.example.com/music/xxx.mp3",
+  "size": 13107200,
+  "contentType": "audio/mpeg"
+}
+```
+
+### 删除曲目（需登录）
+
+```http
+DELETE /api/music/:id
+Authorization: Bearer <token>
+```
+
+- 先向 R2 发起**服务端签名 DELETE**（`x-amz-content-sha256: UNSIGNED-PAYLOAD` + `x-amz-date`，SignedHeaders `host;x-amz-content-sha256;x-amz-date`），成功后再删除 D1 行
+- R2 删除失败时返回 `502` 并附 R2 响应片段，D1 行保留（数据一致优先）
+
+## 表结构
+
+```sql
+CREATE TABLE music (
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL,
+  artist     TEXT DEFAULT '',
+  url        TEXT NOT NULL,       -- R2 公开地址（R2_PUBLIC_BASE + /music/<key>）
+  cover      TEXT DEFAULT '',
+  size       INTEGER DEFAULT 0,   -- 字节
+  duration   INTEGER DEFAULT 0,   -- 秒
+  sort       INTEGER DEFAULT 0,   -- 排序
+  created_at TEXT DEFAULT ''
+);
+```

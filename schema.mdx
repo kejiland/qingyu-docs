@@ -109,6 +109,26 @@ CREATE TABLE media (
 );
 ```
 
+## music（音乐）
+
+```sql
+CREATE TABLE music (
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL,
+  artist     TEXT DEFAULT '',
+  url        TEXT NOT NULL,     -- R2 公开地址（R2_PUBLIC_BASE + /music/<key>）
+  cover      TEXT DEFAULT '',
+  size       INTEGER DEFAULT 0, -- 字节
+  duration   INTEGER DEFAULT 0, -- 秒
+  sort       INTEGER DEFAULT 0, -- 排序
+  created_at TEXT DEFAULT ''
+);
+```
+
+<Info>
+音频文件本体存放在 Cloudflare R2，D1 仅存元数据。详见[音乐](/music)。
+</Info>
+
 ## site_settings（站点设置）
 
 ```sql
