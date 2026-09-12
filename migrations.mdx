@@ -33,21 +33,25 @@ GitHub Actions 部署时自动按序执行所有迁移。
 npx wrangler d1 execute blog --remote --file=migrations/0001_init.sql
 ```
 
-## 幂等性
+## 幂等性（三层策略）
 
-大部分迁移使用 `CREATE TABLE IF NOT EXISTS`，重复执行不报错。
+GitHub Actions 部署时按序执行所有迁移，采用**三层幂等策略**：
 
-<Warning>
-`ALTER TABLE ADD COLUMN` 在 SQLite 中不支持幂等执行。deploy.yml 中对这些文件做了 `duplicate column` 错误忽略处理。
-</Warning>
+1. **记账表 `schema_migrations`**：每次成功执行的迁移记录 `name`（主键）+ `applied_at`；下次部署先查记账表，已应用的直接跳过（覆盖 `0012_clear_orphaned_nav` 这类非重跑安全的删除类迁移）。
+2. **列预检**：ALTER 加列类迁移（`0003` cover、`0004` category、`0005` status、`0010` must_change、`0011` parent_id）执行前先用 `pragma_table_info` 查目标列是否已存在，存在则记账跳过——**注意 `0001_init.sql` 新建库已包含这些列**，老库也已加过，直接执行必然报 `duplicate column`（SQLite 没有 `ADD COLUMN IF NOT EXISTS`）。
+3. **兜底**：偶发执行失败时，若报错含 `duplicate column` / `already has a column` / `already exists` 等字样，按「已应用」记账跳过；其余错误完整打印并中断，避免半套 schema 上线。
+
+<Info>
+`0001_init.sql` 是全量表结构（posts 含 cover/category/status 等全部字段）；0003/0004/0005 仅对早期存量库有意义。
+</Info>
 
 ## 添加新迁移
 
 1. 在 `migrations/` 下创建新文件，编号递增
-2. 使用 `IF NOT EXISTS` 确保幂等
-3. `ALTER TABLE` 需在 deploy.yml 中处理错误
+2. 使用 `IF NOT EXISTS` 确保幂等（新建表）
+3. `ALTER TABLE` 加列需同步更新 deploy.yml 的列预检列表
 
 ```bash
 # 命名规范
-0013_add_feature_x.sql
+0014_add_feature_x.sql
 ```

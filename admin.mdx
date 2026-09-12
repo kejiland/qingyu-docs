@@ -7,19 +7,30 @@ description: "管理员认证与会话接口"
 
 ```http
 POST /api/admin/setup
-X-Setup-Key: <BLOG_ADMIN_SETUP_KEY>
 ```
 
 **请求体：**
 
 ```json
 {
-  "password": "新管理员密码"
+  "password": "新管理员密码（至少 8 位）"
 }
 ```
 
+**安装密钥（`BLOG_ADMIN_SETUP_KEY`）为可选项，两种模式：**
+
+| 模式 | 行为 |
+|------|------|
+| 已配置（推荐 / 生产） | 首次初始化需请求头 `X-Setup-Key` 与环境变量匹配，否则 `403`。杜绝「第一个请求到的人即拿管理员」的抢注竞态 |
+| 未配置（兼容旧行为） | 首次初始化**免密钥**直接设置密码（全新部署存在先到先得竞态，建议生产配置密钥） |
+
+**已有密码时**（重置场景）：
+
+- 配置了密钥：需 `X-Setup-Key` 匹配，否则 `403`；匹配后返回 `409`（提示先删除 D1 表 `admin_auth` 的 auth 行才能重置）
+- 未配置：一律返回 `409` 拒绝，防止未授权覆盖
+
 <Info>
-仅在数据库无管理员密码时可用。一次性接口。
+仅在没有管理员密码时可用于初始化；返回 `201` 表示设置成功。密码长度强制至少 8 位。
 </Info>
 
 ## 登录
@@ -42,9 +53,17 @@ POST /api/admin/login
 {
   "ok": true,
   "token": "32字节hex会话Token",
+  "expiresIn": 604800,
   "mustChange": false
 }
 ```
+
+**未初始化时的登录行为：**
+
+- 配置了 `BLOG_ADMIN_SETUP_KEY` → 返回 `403`：「管理员尚未初始化，请先调用 POST /api/admin/setup 并使用安装密钥设置密码」（fail-closed，杜绝抢注）
+- 未配置密钥 → **自动初始化**：服务端生成随机默认密码（`xxxx-xxxx` 格式），写入 D1 并签发会话，响应额外返回 `defaultPassword` 与 `mustChange: true`，前端弹出首次登录提示，登录后强制修改密码
+
+**正常登录响应附加字段：** `mustChange: true` 表示该账号被标记为需要强制改密（如通过随机密码流程初始化后）。
 
 ### 安全机制
 
@@ -67,7 +86,7 @@ Token 立即作废。
 ## 修改密码
 
 ```http
-PUT /api/admin/password
+POST /api/admin/password
 Authorization: Bearer <token>
 ```
 
@@ -75,10 +94,12 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "currentPassword": "当前密码",
-  "newPassword": "新密码"
+  "current": "当前密码",
+  "password": "新密码（至少 8 位）"
 }
 ```
+
+修改成功后**撤销全部会话**，需重新登录。
 
 ## 认证方式
 

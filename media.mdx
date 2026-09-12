@@ -1,13 +1,36 @@
 ---
 title: "媒体资源"
-description: "图片上传与管理接口"
+description: "图片上传（R2 直传）与管理接口"
 ---
 
-## 获取媒体列表
+## 概述
+
+后台「媒体库」用于管理博客图片。上传采用 **浏览器直传 R2**（与音乐同款 S3 预签名模式），图片文件**不经过 Worker**，D1 `media` 表只存元数据。
+
+- 新上传：`POST /api/media/upload-url` 签发预签名 PUT URL → 浏览器直接 PUT 到 R2 → `POST /api/media` 登记元数据
+- 旧数据兼容：历史 base64（`data:image/...`）记录保留可读，不迁移、不删除
+- 降级：未配置 R2 媒体桶时，`upload-url` 返回 `503`，只读列表仍可用
+
+```
+浏览器 ──POST /api/media/upload-url──> Worker（SigV4 签名）
+浏览器 ──PUT（预签名 URL）──────────> R2（文件不经过 Worker）
+浏览器 ──POST /api/media（登记元数据）─> D1 media 表
+```
+
+## 签发预签名上传 URL（需登录）
 
 ```http
-GET /api/media
+POST /api/media/upload-url
 Authorization: Bearer <token>
+```
+
+**请求体：**
+
+```json
+{
+  "filename": "photo.png",
+  "size": 5242880
+}
 ```
 
 **响应：**
@@ -15,20 +38,22 @@ Authorization: Bearer <token>
 ```json
 {
   "ok": true,
-  "media": [
-    {
-      "id": "媒体ID",
-      "name": "图片名称",
-      "url": "data:image/png;base64,...",
-      "type": "image/png",
-      "size": 123456,
-      "created_at": "2025-01-01T00:00:00Z"
-    }
-  ]
+  "uploadUrl": "https://<R2端点>/media/xxx.png?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "publicUrl": "https://media.example.com/media/xxx.png",
+  "key": "media/xxx.png",
+  "contentType": "image/png",
+  "expiresIn": 3600
 }
 ```
 
-## 上传媒体
+- 图片格式白名单：`png / jpg / jpeg / webp / gif / svg / avif / bmp / ico`
+- 单文件大小 ≤ 10MB
+- 预签名 URL 有效期 1 小时（SigV4 + `UNSIGNED-PAYLOAD`）
+- 返回 `503`：R2 媒体桶未配置（缺少 `R2_MEDIA_BUCKET` / R2 凭据）
+
+浏览器拿到 `uploadUrl` 后直接 `PUT` 上传（`Content-Type` 与响应一致），完成后再登记元数据。
+
+## 登记媒体（需登录）
 
 ```http
 POST /api/media
@@ -39,24 +64,58 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "name": "图片名称",
-  "url": "data:image/png;base64,...",
+  "name": "photo.png",
+  "url": "https://media.example.com/media/xxx.png",
   "type": "image/png",
-  "size": 123456
+  "size": 5242880
 }
 ```
 
-<Info>
-图片以 base64 格式存储在 D1 数据库中。适合个人博客小规模图片。
-大量图片建议使用外部图床。
-</Info>
+`url` 协议白名单：仅允许 `http(s)://` 外链与 `data:image/` 内嵌图片（兼容旧 base64 记录与外部图床 URL）；其余协议一律 `400` 拒绝。
 
-## 删除媒体
+**响应：**
+
+```json
+{
+  "ok": true,
+  "media": {
+    "id": "m-媒体ID",
+    "name": "photo.png",
+    "url": "https://media.example.com/media/xxx.png",
+    "type": "image/png",
+    "size": 5242880,
+    "created_at": "2025-01-01"
+  }
+}
+```
+
+## 获取媒体列表（需登录）
+
+```http
+GET /api/media
+Authorization: Bearer <token>
+```
+
+**响应：** `{ "ok": true, "media": [ ... ] }`，按 `created_at DESC, id DESC` 排序（`no-store`，增删即时可见）。
+
+## 删除媒体（需登录）
 
 ```http
 DELETE /api/media/:id
 Authorization: Bearer <token>
 ```
+
+删除时**先删 R2 对象**（若 `url` 是本站 `/media/` 前缀的公开地址，先向媒体桶发起服务端签名 DELETE），再删 D1 元数据行；外链 / base64 记录不触发 R2 删除。
+
+## 环境变量（GitHub Secrets）
+
+| 变量 | 说明 |
+|------|------|
+| `R2_ACCESS_KEY_ID` | R2 S3 兼容凭据（与音乐共用） |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容凭据 |
+| `R2_ENDPOINT` | R2 S3 兼容端点 |
+| `R2_MEDIA_BUCKET` | **媒体专用桶**（如 `qingyu-media`，独立于音乐桶） |
+| `R2_MEDIA_PUBLIC_BASE` | 媒体桶绑定的自定义域名（如 `https://media.example.com`） |
 
 ## 表结构
 
@@ -64,7 +123,7 @@ Authorization: Bearer <token>
 CREATE TABLE media (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
-  url        TEXT NOT NULL,       -- data URL 或外链
+  url        TEXT NOT NULL,       -- R2 公开地址 / data URL / 外链
   type       TEXT DEFAULT '',     -- MIME 类型
   size       INTEGER DEFAULT 0,   -- 字节
   created_at TEXT DEFAULT ''

@@ -15,26 +15,20 @@ GET /api/settings
 {
   "ok": true,
   "settings": {
-    "siteName": "我的博客",
-    "siteDesc": "一个个人博客",
-    "avatar": "https://...",
-    "nav": [ ... ],
-    "profile": { ... },
-    "commentModeration": true
+    "site_info": "{\"name\":\"我的博客\",\"desc\":\"一个个人博客\",\"avatar\":\"https://...\",\"copyright\":\"\",\"footerText\":\"\",\"about\":\"\"}",
+    "profile": "{\"name\":\"站长\",\"bio\":\"\",\"avatar\":\"\",\"email\":\"\"}",
+    "moderate_comments": "1"
   }
 }
 ```
 
-### 常见设置项
+`settings` 是**扁平键值表**，每个值都是 JSON 字符串（读取端自行解析）。常见键：
 
-| Key | 类型 | 说明 |
+| Key | 值（JSON 字符串） | 说明 |
 |-----|------|------|
-| `siteName` | `string` | 站点名称 |
-| `siteDesc` | `string` | 站点简介 |
-| `avatar` | `string` | 站点头像 URL（同时用作 favicon 与后台左上角品牌 Logo） |
-| `nav` | `array` | 导航菜单 |
-| `profile` | `object` | 个人资料（`name` / `bio` / `avatar` / `email`；`avatar` 显示在后台左下角） |
-| `commentModeration` | `boolean` | 评论审核开关 |
+| `site_info` | `{name, desc, avatar, copyright, footerText, about}` | 站点信息；`avatar` 为站点头像 URL，同时用作 favicon 与后台左上角品牌 Logo |
+| `profile` | `{name, bio, avatar, email}` | 个人资料；`avatar` 显示在后台左下角 |
+| `moderate_comments` | `"1"` / `"0"` | 评论审核开关 |
 
 ## 更新设置
 
@@ -43,25 +37,30 @@ PUT /api/settings
 Authorization: Bearer <token>
 ```
 
-**单个更新：**
+**请求体为扁平对象**（键 → 值；非字符串值会自动 JSON 序列化存储）：
 
 ```json
 {
-  "key": "siteName",
-  "value": "新名称"
+  "site_info": {
+    "name": "我的博客",
+    "desc": "一个个人博客",
+    "avatar": "https://...",
+    "copyright": "© 2025",
+    "footerText": "本站声明",
+    "about": "关于我"
+  },
+  "profile": {
+    "name": "站长",
+    "bio": "",
+    "avatar": "",
+    "email": "me@example.com"
+  },
+  "moderate_comments": "1"
 }
 ```
 
-**批量更新：**
-
-```json
-{
-  "settings": {
-    "siteName": "新名称",
-    "siteDesc": "新简介"
-  }
-}
-```
+- 写入为**合并式 upsert**（`INSERT ... ON CONFLICT(k) DO UPDATE`），只覆盖请求中包含的键，其余键保持不变
+- 需要会话 Token 鉴权
 
 ## 表结构
 

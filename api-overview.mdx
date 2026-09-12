@@ -7,11 +7,11 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 
 | 分组 | 端点 | 鉴权 | 说明 |
 |------|------|------|------|
-| 文章 | `GET/POST /api/posts`、`GET/PUT/DELETE /api/posts/:id` | 写操作需要 | 文章 CRUD，支持加密 / 置顶 |
+| 文章 | `GET/POST /api/posts`、`GET/PUT/DELETE /api/posts/:id` | 写操作需要 | 文章 CRUD，支持加密 / 置顶；**删除文章时级联清理其评论、点赞/浏览量及每日聚合**（见[文章](/posts)） |
 | 评论 | `GET/POST /api/posts/:id/comments`、`PUT/DELETE /api/comments/:id` | 发表公开；审核删除需要 | 嵌套回复、审核模式、重复拦截 |
 | 留言板 | 复用评论接口（`:id` = `gb-note` / `gb-idea`） | 同评论 | 见[留言板](/guestbook) |
 | 统计 | `GET/POST /api/posts/:id/stats` | 公开 | 阅读数 / 点赞 |
-| 媒体 | `GET/POST /api/media`、`DELETE /api/media/:id` | 需要 | 图片上传（base64 存 D1） |
+| 媒体 | `POST /api/media/upload-url`、`GET/POST /api/media`、`DELETE /api/media/:id` | 需要 | **图片 R2 直传**（预签名 URL）+ D1 元数据登记；兼容旧 base64 记录，见[媒体](/media) |
 | 音乐 | `GET /api/music`（公开）、`POST /api/music/upload-url`、`POST /api/music`、`DELETE /api/music/:id` | 读写需登录 | R2 预签名直传 + 播放列表，见[音乐](/music) |
 | 设置 | `GET/PUT /api/settings` | 读取公开 | 站点信息 / 导航 / 资料 |
 | AI | `GET /api/ai/ping`、`POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 公开；其余需登录 / 需绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；未绑定、未配置 D1 或开关关闭时返回 404 |
