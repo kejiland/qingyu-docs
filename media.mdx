@@ -8,7 +8,7 @@ description: "图片上传（R2 直传）与管理接口"
 后台「媒体库」用于管理博客图片。上传采用 **浏览器直传 R2**（与音乐同款 S3 预签名模式），图片文件**不经过 Worker**，D1 `media` 表只存元数据。
 
 - 新上传：`POST /api/media/upload-url` 签发预签名 PUT URL → 浏览器直接 PUT 到 R2 → `POST /api/media` 登记元数据
-- 旧数据兼容：历史 base64（`data:image/...`）记录保留可读，不迁移、不删除
+- 图片本体一律存 R2：D1 `media` 表只存元数据（url 为 R2 公开地址）
 - 降级：未配置 R2 媒体桶时，`upload-url` 返回 `503`，只读列表仍可用
 
 ```
@@ -71,7 +71,7 @@ Authorization: Bearer <token>
 }
 ```
 
-`url` 协议白名单：仅允许 `http(s)://` 外链与 `data:image/` 内嵌图片（兼容旧 base64 记录与外部图床 URL）；其余协议一律 `400` 拒绝。
+`url` 协议白名单：仅允许 `http(s)://`——R2 公开地址或外部图床链接；`data:` / `javascript:` / `vbscript:` 等协议一律 `400` 拒绝（图片本体一律走 R2 直传，不再接受 base64 内嵌）。
 
 **响应：**
 
@@ -105,7 +105,7 @@ DELETE /api/media/:id
 Authorization: Bearer <token>
 ```
 
-删除时**先删 R2 对象**（若 `url` 是本站 `/media/` 前缀的公开地址，先向媒体桶发起服务端签名 DELETE），再删 D1 元数据行；外链 / base64 记录不触发 R2 删除。
+删除时**先删 R2 对象**（若 `url` 是本站 `/media/` 前缀的公开地址，先向媒体桶发起服务端签名 DELETE），再删 D1 元数据行；外部图床链接不触发 R2 删除。
 
 ## 环境变量（GitHub Secrets）
 
@@ -123,7 +123,7 @@ Authorization: Bearer <token>
 CREATE TABLE media (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
-  url        TEXT NOT NULL,       -- R2 公开地址 / data URL / 外链
+  url        TEXT NOT NULL,       -- R2 公开地址或 http(s) 外链
   type       TEXT DEFAULT '',     -- MIME 类型
   size       INTEGER DEFAULT 0,   -- 字节
   created_at TEXT DEFAULT ''
