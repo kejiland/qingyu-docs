@@ -22,6 +22,8 @@ description: "了解 Qingyu'Blog 的整体架构设计"
 │   │   ├── api-core.js        # API 核心逻辑
 │   │   ├── music.js           # 音乐 API（R2 预签名直传 / 同步删除）
 │   │   └── media.js           # 媒体 API（图片 R2 直传 / 元数据登记 / 同步删除）
+│   ├── feed.xml.js            # 根路径 /feed.xml（云端动态 RSS）
+│   ├── sitemap.xml.js         # 根路径 /sitemap.xml（云端动态 Sitemap）
 │   └── api/                   # 各端点路由
 ├── worker.js                  # Workers 入口
 ├── migrations/                # D1 数据库迁移
@@ -95,6 +97,8 @@ graph TB
 | 只读接口 | `public, s-maxage=60, stale-while-revalidate=300` |
 | RSS/Sitemap | `public, s-maxage=300, stale-while-revalidate=600` |
 | 写操作 | `no-store` |
+
+> **Feed / Sitemap 动态端点**：云端模式下 `/feed.xml`、`/sitemap.xml` 与 `/api/feed.xml`、`/api/sitemap.xml` 均实时从 D1 当前文章生成，文章增删改查后自动更新，不再需要手工维护 `public/feed.xml` / `public/sitemap.xml`。
 
 > **管理端缓存穿透**：`GET /api/posts` 带 `s-maxage=60` 边缘缓存，删除/发布文章后管理后台会以 `api/posts?_=<时间戳>` 请求穿透缓存立即取到最新列表（配合前台 `syncDeletedPost` 内存同步，删除无需刷新网页即可全线生效）。未配置 `CF_API_TOKEN` + `CF_ZONE_ID` 时，`purgeTags` 不会主动清缓存，访客侧最长延迟 60 秒自然过期。
 

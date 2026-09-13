@@ -52,7 +52,7 @@ npx wrangler kv namespace create BLOG
 | `BLOG_D1_ID` | ✅ | D1 数据库 ID（UUID） |
 | `BLOG_KV_ID` | ✅ | KV 命名空间 ID |
 | `BLOG_ADMIN_SETUP_KEY` | 推荐 | 首次设置密码的密钥 |
-| `SITE_URL` | 推荐 | 站点域名（用于 CORS / RSS） |
+| `SITE_URL` | 推荐 | 站点域名（用于 CORS / RSS / Sitemap） |
 | `CF_ZONE_ID` | 可选 | Zone ID（发布即清缓存） |
 
 <Warning>
@@ -72,7 +72,7 @@ npx wrangler kv namespace create BLOG
 
 ## 步骤四：首次设置密码
 
-访问 `https://<worker名>.<子域>.workers.dev/admin`：
+访问 `https://www.2024921.xyz/admin`：
 
 - 配置了 `BLOG_ADMIN_SETUP_KEY`：用该密钥设置密码
 - 否则：自动生成随机密码，登录后强制修改

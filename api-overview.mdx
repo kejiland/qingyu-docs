@@ -17,7 +17,7 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 | AI | `GET /api/ai/ping`、`POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 公开；其余需登录 / 需绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；未绑定、未配置 D1 或开关关闭时返回 404 |
 | 管理认证 | `/api/admin/*`（setup / login / logout / password） | — | 首次设密 / 登录 / 登出 / 改密 |
 | 站点产物 | `GET/POST /api/site-files`、`GET /api/site-files/:name` | 写入需要 | feed.xml / sitemap.xml / posts.js |
-| Feed | `GET /api/feed.xml`、`GET /api/sitemap.xml` | 公开 | RSS 与站点地图，实时生成 |
+| Feed | `GET /feed.xml`、`GET /sitemap.xml`、`GET /api/feed.xml`、`GET /api/sitemap.xml` | 公开 | RSS 与站点地图，实时生成，文章增删改查后自动更新 |
 
 <Info>
 各端点的完整请求/响应示例见「API 参考」分组下的对应页面。

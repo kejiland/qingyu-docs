@@ -31,4 +31,5 @@ php -S localhost:8080 -t public
 
 ## 导出发布
 
-在后台 `/admin` 中导出 posts.js / feed.xml / sitemap.xml，上传到静态托管即可。
+- **静态模式**：在后台 `/admin` 中一次性导出 posts.js / feed.xml / sitemap.xml，上传到静态托管即可。
+- **云端模式**：`/feed.xml` 与 `/sitemap.xml` 由 Worker / Pages Functions 实时生成，文章增删改查后自动更新，无需手工维护。
