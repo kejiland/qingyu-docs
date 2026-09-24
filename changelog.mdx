@@ -3,7 +3,64 @@ title: "更新日志"
 description: "版本更新记录"
 ---
 
-## v2.6.6（最新）
+## v2.7.2（最新）
+
+### 🛡️ 安全加固
+
+- **登录限流重做为三层短冷却**：单 IP 5 次失败 → 15 分钟；同一子网（IPv4 /24、IPv6 前 4 段）15 次失败 → 60 秒冷却；全站 30 次失败 → **仅 10 秒冷却 + 告警日志**。**不再使用全局长锁定**——对只有一个管理员的系统，全局长锁定防不住攻击者（换个 IP 即可继续），却能被攻击者用来把站长挡在门外
+- **新增应急通道**：登录请求携带正确的 `X-Setup-Key`（即 `BLOG_ADMIN_SETUP_KEY`）可**跳过全部限流**，但**不跳过密码校验**；后台登录页在触发限流时自动展开「被限流？用安装密钥登录」入口
+- **锁定期与冷却期内直接返回 429 早退，不读也不写数据库**：分布式爆破最多每 10 秒消耗一次 D1 写入，避免被失败登录刷爆免费写额度；计数 1 小时老化，冷却结束后保留计数，防止「等冷却归零再重试」
+- 修复了「全局限流三个常量从未声明」导致防 IP 轮换逻辑实际从未生效的问题
+
+### ✨ 新功能
+
+- **可选边缘限流绑定**：配置 GitHub Secret `BLOG_RATE_LIMIT_BINDING`（正整数，如 `1001`）后，部署工作流会自动改用 `wrangler@^4.36.0` 并注入 `[[ratelimits]]` 绑定（绑定名 `LOGIN_LIMITER`，10 次/分钟/位置）；**未配置时行为与旧版完全一致**，代码检测不到绑定即回退 D1 计数
+- **可复现的截图工具** `scripts/screenshots/`：本地演示服务器（真实 `public/` 代码 + mock API 示例数据）+ 无头 Chrome 截图脚本，不需要管理员密码、不接触线上数据，可随时重跑；共生成 23 张截图
+
+### 🔧 变更
+
+- `BLOG_VERSION` → `2.7.2`，`public/index.html` 的静态资源 `?v=` → `2.7.2`，语言包缓存版本 `I18N_VER` → **9**
+- `smoke-test.js` **77 → 78 例**（新增「登录限流」整套回归：锁定期间正确凭据、错误密钥不可绕过、计数不写库、计数老化、子网隔离、全局冷却不锁死、限流器异常降级）
+
+### 📝 文档
+
+- 主仓库文档**全面中英双语化**：`README`、`CLOUDFLARE_SETUP_GUIDE`、`DEPLOYMENT_SECRETS_GUIDE`、`SECURITY`、`ABOUT`、`CODE_OF_CONDUCT` 均提供 `X.md` + `X_EN.md` 成对文件；`CONTRIBUTING`、PR / Issue 模板、`FUNDING.yml`、`public/llms.txt` 改为单文件内中英对照；每个文件首行加入语言切换入口
+- 新增 **Cloudflare 配置完全指南（新手版）**（中英双语，891 行）：账号注册 / D1 / KV / API Token 权限勾选 / R2 桶与 CORS / Workers AI / 自定义域名与 Zone ID / Secrets 全表 / 部署 / 首次初始化 / 12 项自检 / 故障排查 / 免费额度，并含第 9 节「加固后台登录入口」（Cloudflare Access / WAF 限流规则 / Workers 边缘限流绑定三种方案）
+- 修正主仓库 README 中的过时描述：强调色 **4 种**（非 6 种）、冒烟测试 **78 例**、KV 真实键表、`SITE_URL` 未配置时 CORS fail-closed、迁移补到 0015
+
+---
+
+## v2.7.1
+
+### 🔧 修复
+
+- **R2 上传签名修复**：预签名 PUT 的签名头改为 `content-type;host`——`Content-Type` 参与签名，浏览器必须原样发送，**R2 桶 CORS 的 AllowedHeaders 必须包含 `Content-Type`**；签名路径按 RFC 3986 逐段编码，最终 URL 与签名路径完全一致；不签 `Content-Length`（浏览器差异会导致 403 且响应不带 CORS 头）
+- **音乐上传写回音乐桶**：`R2_BUCKET` 与 `R2_PUBLIC_BASE` 都配置时音乐写入音乐桶，仅当音乐桶配置不完整时才回退 `R2_MEDIA_BUCKET`（此前会误写媒体桶）；上传失败会暴露真实失败阶段，便于定位预检失败
+- 音频白名单补充 `oga`
+
+### 🛡️ 安全加固
+
+- 静态资源响应也统一注入安全响应头；未知 `/api/*` 一律返回 JSON 404，绝不回退 HTML（`functions/api/[[path]].js` 为 Pages 侧兜底）
+- 新增**迁移 0015 热点索引**：`idx_comments_post_id` / `idx_comments_status_date` / `idx_music_sort` / `idx_media_created_id` / `idx_admin_sessions_exp`
+- `robots.txt` 移除了不被支持的非标准指令
+
+### ✨ 新功能
+
+- **资源发现清单**：新增 `/.well-known/ard.json`（ARD v0.91）与 `/.well-known/ai-catalog.json`，并在首页通过 `<link rel="ard">` / `<link rel="ai-catalog">` 声明；`public/llms.txt` 提供面向 LLM / 代理的站点说明
+
+### 🚀 体验优化
+
+- **静态资源缓存分层**：带 `?v=` 版本号与字体 / 图标等不可变资源缓存一年；其余带扩展名资源 1 小时 + `stale-while-revalidate`；无扩展名 HTML 入口 `no-cache`
+- 音乐播放器样式与脚本改为**按需加载**（不在首屏关键路径）
+- 浅色主题文字对比度提升
+
+### 📝 文档
+
+- 新增 `DEPLOYMENT_SECRETS_GUIDE.md`（GitHub Secrets 与 R2 令牌详解，中英双语）
+
+---
+
+## v2.6.6
 
 ### 🚀 域名与 SEO
 
@@ -70,7 +127,7 @@ description: "版本更新记录"
 - **AI 写作助手**：编辑器一键生成**标题建议 / 润色 / 翻译**（目标语言可选），结果可应用或复制
 - **AI 文章摘要**：文章页一键生成内容摘要，单篇 30 天缓存
 - **AI 评论汇总**：评论管理页一键汇总近期评论要点（1 小时缓存）+ 单条评论垃圾检测
-- **主题色切换**：6 种强调色，桌面图标按钮 + 弹层 / 手机端原生下拉
+- **主题色切换**：强调色可切换（当前为 **4 种**：赭橙 `terra` / 黛蓝 `indigo` / 竹青 `bamboo` / 凝夜紫 `dusk`），桌面图标按钮 + 弹层 / 手机端原生下拉
 - **后台品牌区**：左上角 Logo 渐变方块（站点头像或站点名首字 + 流动动画），左下角显示个人资料头像
 
 ### 🗑️ 移除

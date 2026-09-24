@@ -12,6 +12,11 @@ Qingyu'Blog 最初使用 Cloudflare KV 作为存储后端，后来迁移到 D1�
 | 一致性 | 最终一致性 | 强一致性 |
 | 查询 | Key-Value | SQL |
 | 性能 | 较慢 | 边缘 SQLite |
+| 现在的角色 | 限流 / 去重 / AI 缓存 | **主存储**（文章 / 评论 / 统计 / 密码 / 设置） |
+
+<Info>
+现在的 KV **不再存文章**，只用于限流与去重（`rate:cmt:*` / `rate:like:*` / `rate:view:*` / `liked:*` / `viewed:*` / `ai:*`）。D1 是主存储。因此下面的迁移脚本只服务于**从旧版 KV 单 key 存储升级**的场景——全新部署不需要迁移。
+</Info>
 
 ## 迁移方式
 
@@ -23,6 +28,8 @@ export CLOUDFLARE_API_TOKEN="你的API Token"
 export BLOG_KV_ID="KV命名空间ID"
 export BLOG_D1_ID="D1数据库ID"
 ```
+
+`CLOUDFLARE_API_TOKEN` 需要同时具备 **KV 读取**与 **D1 写入**权限；`BLOG_D1_ID` 用于确认目标数据库（**非 dry-run 时必填**）。
 
 #### 预览（推荐先执行）
 
@@ -38,24 +45,32 @@ node scripts/migrate-kv-to-d1.mjs --dry-run
 node scripts/migrate-kv-to-d1.mjs
 ```
 
+脚本会把生成的 SQL 写入临时文件，再通过 `npx wrangler@3.90.0 d1 execute blog --remote --file=...` 执行。
+
 ### GitHub Actions
 
 1. **Actions** 标签页 → **Migrate KV to D1**
-2. **Run workflow** → 选择 `migrate` 模式
+2. **Run workflow** → 选择 `migrate` 模式（另有 `dry-run` 模式）
 
 ## 迁移内容
 
 | KV Key | D1 表 | 说明 |
 |--------|-------|------|
-| `posts` | `posts` | 文章 |
-| `comments:{id}` | `comments` | 评论 |
-| `stats:{id}` | `stats` | 统计 |
-| `admin:auth` | `admin_auth` | 管理员密码 |
-| `admin:sessions` | `admin_sessions` | 会话 |
-| `settings:*` | `site_settings` | 设置 |
+| `posts:v1` | `posts` | 文章（含 `protected` / `enc`：受保护文章的明文 `content` 不落库） |
+| `comments:<postId>` | `comments` | 每篇文章的评论 |
+| `stats:<postId>` | `stats` | 每篇文章的点赞 / 浏览计数 |
+| `admin:auth` | `admin_auth` | 管理员密码哈希（`k='auth'`） |
 
 <Warning>
-迁移前请备份 KV 数据。迁移过程不可逆。
+**脚本不迁移这些表**：`media`、`music`、`site_files`、`site_settings`、`stats_daily`。
+
+- `media` / `music` 的元数据是后续版本才引入的，旧版 KV 里没有对应数据
+- `site_settings`（站点设置）与 `site_files`（站点产物）同理，需要在后台重新配置
+- `stats_daily`（每日聚合，趋势图数据源）也**不会**被回填，历史趋势从迁移之日起重新累计；当前计数在 `stats` 表里，不受影响
+</Warning>
+
+<Warning>
+迁移前请备份 KV 数据。脚本本身使用 `INSERT OR REPLACE`，可重复执行（幂等），但**被覆盖的既有 D1 行不会还原**。
 </Warning>
 
 ## 验证
@@ -66,4 +81,16 @@ npx wrangler d1 execute blog --remote --command "SELECT COUNT(*) FROM posts"
 
 # 检查评论数量
 npx wrangler d1 execute blog --remote --command "SELECT COUNT(*) FROM comments"
+
+# 检查统计与管理员认证
+npx wrangler d1 execute blog --remote --command "SELECT COUNT(*) FROM stats"
+npx wrangler d1 execute blog --remote --command "SELECT k, iter FROM admin_auth"
 ```
+
+迁移完成后脚本会打印类似 `✅ 迁移完成：N 篇文章及其评论/统计 + 管理员认证` 的总结（`+ 管理员认证` 只在 `admin:auth` 存在时出现）。
+
+## 相关页面
+
+- [数据库结构](/schema) —— 各表与关键列
+- [迁移脚本](/migrations) —— 编号到 0015 的 D1 schema 迁移与三层幂等策略
+- [Cloudflare Workers 部署](/cloudflare-workers) —— 部署时 CI 会自动执行 `migrations/*.sql`

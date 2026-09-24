@@ -5,17 +5,22 @@ description: "全站播放器与后台音乐管理（R2 直传）"
 
 前台右下角的**全站音乐播放器** + 后台「音乐管理」页（R2 直传、文件名识别、同步删除）。
 
+<Warning>
+`/api/music*` **只在 `worker.js` 里实现**，仓库 `functions/` 下没有 `music` 目录。因此在 Cloudflare **Pages** 部署下这些路径没有函数文件可命中，会被 `/api/*` 兜底返回 JSON 404 —— **音乐功能需要 Workers 部署**（`wrangler.workers.toml`）。
+</Warning>
+
 ## 前台播放器
 
 - **悬浮按钮**：右下角圆形音符按钮，平时**缩进窗口外露出一点圆弧**，悬停 / 点击即滑出
 - **弹出面板**：点击按钮弹出卡片面板 —— 曲目信息 · 可拖动进度条 · 上一首 / 播放暂停 / 下一首 · 音量 · 播放列表（点击切换、当前曲目高亮 + 均衡动画）；点面板外部或 ✕ 收起
 - **记忆**：自动连播；记忆上次曲目与进度、音量持久化（`localStorage`），刷新后恢复但不自动出声
 - **自适应**：无音乐或接口失败时完全隐藏；后台路由（`/admin`、`/write`、编辑页）自动收起
+- **按需加载**：播放器的 CSS 与 JS 不在首屏关键路径上，滚动 / 空闲时才加载，不影响首屏
 
 ## 后台音乐管理
 
 - **上传**：选择 / 拖拽音频文件，浏览器**直传 R2**（预签名 URL），显示上传进度；选择文件后按文件名自动识别**「歌曲名-歌手」**预填输入框
-- **列表**：行内试听 / 删除（删除与 R2 对象同步）；曲目多时列表**卡片内滚动、表头吸顶**，上传区不随列表滚走
+- **列表**：行内试听 / 重命名 / 删除（删除与 R2 对象同步）；曲目多时列表**卡片内滚动、表头吸顶**，上传区不随列表滚走
 - 管理端列表请求带 `?_=<时间戳>` 穿透 `s-maxage` 边缘缓存，增删即时可见
 
 ## 上传架构（R2 直传）
@@ -27,9 +32,51 @@ description: "全站播放器与后台音乐管理（R2 直传）"
 ```
 
 - 音频文件**不经过 Worker**，规避请求体上限与带宽计费（R2 egress 免费）
-- 环境变量：`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` / `R2_PUBLIC_BASE`
-- 格式白名单：mp3 / m4a / ogg / wav / aac / opus / flac，单文件 ≤ 30MB
+- 环境变量：`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` + 下面两组桶变量
 - **降级**：未配置 R2 凭据时，读取播放列表仍可用（D1），上传返回 `503`
+
+### 目标桶选择（`musicStorage()`）
+
+音乐**优先写回音乐桶**，仅在音乐桶配置不完整时回退媒体桶（兼容只授予媒体桶权限的旧凭据）：
+
+| 条件 | 实际使用的桶 | 公开基址 |
+|------|------|------|
+| `R2_BUCKET` 与 `R2_PUBLIC_BASE` **都非空** | `R2_BUCKET`（音乐桶，如 `qingyu-music`） | `R2_PUBLIC_BASE` |
+| 音乐桶任一项为空 | `R2_MEDIA_BUCKET`（媒体桶） | `R2_MEDIA_PUBLIC_BASE` |
+
+<Info>
+这个优先级是 v2.7.1 的修复点：此前的实现会误把音乐写进媒体桶。现在**只要音乐桶两个变量都在，就一定写音乐桶**。
+
+删除时用 `resolveR2Object()` 同时识别媒体桶与音乐桶的公开域名，因此**切换上传目标前后的历史曲目都能正确同步删除**；外链（非 `/music/` 前缀或域名不匹配）不会被当成桶内对象。
+</Info>
+
+### 文件白名单与大小
+
+| 项 | 值 |
+|----|-----|
+| 音频格式白名单 | `mp3 / m4a / ogg / **oga** / wav / aac / opus / flac` |
+| MIME 映射 | mp3→`audio/mpeg`、m4a→`audio/mp4`、ogg/oga/opus→`audio/ogg`、wav→`audio/wav`、aac→`audio/aac`、flac→`audio/flac` |
+| 单文件大小 | `1B ~ 30MB`（30MB = 31457280 字节） |
+
+<Note>
+`oga`（Ogg Audio 的另一种扩展名）在 v2.7.1 加入白名单；但**接口的错误提示文案里尚未列出 `oga`**——收到不支持格式时返回的仍是 `不支持的音频格式（mp3 / m4a / ogg / wav / aac / opus / flac）`，而 `oga` 实际上可以正常上传。
+</Note>
+
+### 预签名 PUT 签名细节
+
+| 项 | 值 |
+|----|-----|
+| 签名算法 | AWS SigV4（HMAC-SHA256），`X-Amz-SignedHeaders` = `content-type;host` |
+| 载荷哈希 | `UNSIGNED-PAYLOAD` |
+| 有效期 | **3600 秒** |
+| `Content-Length` | **不参与签名**——浏览器自动生成，纳入签名会因实现差异导致 `403`，且该 `403` 不带 CORS 头 |
+| 路径编码 | 按 RFC 3986 逐段编码（`!'()*` 也转义），URL 与签名路径完全一致 |
+
+<Warning>
+`Content-Type` 参与签名，浏览器 PUT 时必须**原样发送**响应里的 `contentType`；且 **R2 桶 CORS 的 AllowedHeaders 必须包含 `Content-Type`**，否则预检失败、上传表现为无原因的 `xhr.onerror`。
+</Warning>
+
+上传失败时接口会暴露**真实失败阶段**（预检失败 / 签名不匹配 / 网络中断等），便于定位是 CORS 还是签名问题；同时前端会调用删除接口清理可能产生的孤儿对象（幂等）。
 
 ## API
 
@@ -46,17 +93,21 @@ GET /api/music
   "ok": true,
   "music": [
     {
-      "id": "曲目ID",
+      "id": "song-xxx",
       "title": "起风了",
       "artist": "买辣椒也用券",
       "url": "https://music.example.com/music/xxx.mp3",
+      "cover": "",
       "size": 13107200,
       "duration": 0,
-      "sort": 0
+      "sort": 0,
+      "date": "2025-01-01"
     }
   ]
 }
 ```
+
+按 `sort ASC, created_at ASC` 排序。响应头 `Cache-Control: s-maxage=60, max-age=30`。
 
 <Info>
 只读接口带 `s-maxage=60` 边缘缓存；管理后台以 `?_=<时间戳>` 穿透缓存取最新列表。
@@ -73,7 +124,7 @@ Authorization: Bearer <token>
 
 ```json
 {
-  "name": "起风了-买辣椒也用券.mp3",
+  "filename": "起风了-买辣椒也用券.mp3",
   "size": 13107200
 }
 ```
@@ -83,15 +134,22 @@ Authorization: Bearer <token>
 ```json
 {
   "ok": true,
-  "uploadUrl": "https://<R2端点>/music/xxx.mp3?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "uploadUrl": "https://<R2端点>/<音乐桶>/music/xxx.mp3?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=...",
   "publicUrl": "https://music.example.com/music/xxx.mp3",
+  "key": "music/xxx.mp3",
   "contentType": "audio/mpeg",
   "expiresIn": 3600
 }
 ```
 
-- 预签名 URL 有效期 1 小时，SigV4 + `UNSIGNED-PAYLOAD`
-- 浏览器拿到后直接 `PUT` 上传（`Content-Type` 与响应一致）；上传失败时调用删除接口清理孤儿对象（幂等）
+| 错误 | 状态码 | error |
+|------|--------|-------|
+| 扩展名不在白名单 | `400` | `不支持的音频格式（mp3 / m4a / ogg / wav / aac / opus / flac）` |
+| 大小越界 | `400` | `文件大小需在 1B ~ 30MB 之间` |
+| R2 未配置 | `503` | `R2 未配置（缺少 R2 凭据 / R2_BUCKET），无法上传` |
+| 缺少 / 无效会话 | `401` | — |
+
+浏览器拿到后直接 `PUT` 上传（`Content-Type` 与响应一致）；上传失败时调用删除接口清理孤儿对象（幂等）。
 
 ### 注册曲目（需登录）
 
@@ -100,18 +158,49 @@ POST /api/music
 Authorization: Bearer <token>
 ```
 
-**请求体：**
+**请求体**（`title` 与 `url` 必填）：
 
 ```json
 {
-  "id": "xxx",
   "title": "起风了",
   "artist": "买辣椒也用券",
   "url": "https://music.example.com/music/xxx.mp3",
+  "cover": "",
   "size": 13107200,
-  "contentType": "audio/mpeg"
+  "duration": 180,
+  "sort": 0
 }
 ```
+
+**响应（`201`）：**
+
+```json
+{
+  "ok": true,
+  "track": {
+    "id": "song-xxx",
+    "title": "起风了",
+    "artist": "买辣椒也用券",
+    "url": "https://music.example.com/music/xxx.mp3",
+    "cover": "",
+    "size": 13107200,
+    "duration": 180,
+    "sort": 0,
+    "date": "2025-01-01"
+  }
+}
+```
+
+`id` 由服务端生成（`song-` + 随机串）；缺 `title` 或 `url` 返回 `400`「缺少 title / url」。注意响应字段名是 **`track`**（不是 `music`）。
+
+### 编辑曲目（需登录）
+
+```http
+PUT /api/music/:id
+Authorization: Bearer <token>
+```
+
+**请求体：** `{ "title", "artist", "cover", "sort", "duration" }`，`title` 必填（否则 `400`「缺少 title」）。成功返回 `{ "ok": true }`，D1 写入失败返回 `500`「数据库更新失败，请稍后重试」。
 
 ### 删除曲目（需登录）
 
@@ -120,8 +209,28 @@ DELETE /api/music/:id
 Authorization: Bearer <token>
 ```
 
-- 先向 R2 发起**服务端签名 DELETE**（`x-amz-content-sha256: UNSIGNED-PAYLOAD` + `x-amz-date`，SignedHeaders `host;x-amz-content-sha256;x-amz-date`），成功后再删除 D1 行
-- R2 删除失败时返回 `502` 并附 R2 响应片段，D1 行保留（数据一致优先）
+删除顺序是**先 R2、后 D1**：
+
+1. 用 `resolveR2Object()` 解析 `url` 所属桶与对象 key（同时识别音乐桶与媒体桶公开域名；外链返回 `null`，跳过 R2 删除）
+2. 命中则向对应桶发起**服务端签名 DELETE**（`x-amz-content-sha256: UNSIGNED-PAYLOAD` + `x-amz-date`，SignedHeaders `host;x-amz-content-sha256;x-amz-date`）
+3. R2 删除失败 → 返回 **`502`**「R2 对象删除失败，请稍后重试」，**D1 行保留**（数据一致优先，避免幽灵曲目）
+4. R2 成功（或对象本就不存在，S3 DELETE 幂等，`404` 视为成功）后再删 D1 行；D1 删除失败返回 `500`「数据库删除失败，请稍后重试」
+
+## 环境变量（GitHub Secrets）
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `R2_ACCESS_KEY_ID` | ✅ | R2 S3 兼容凭据（与媒体共用） |
+| `R2_SECRET_ACCESS_KEY` | ✅ | R2 S3 兼容凭据 |
+| `R2_ENDPOINT` | ✅ | R2 S3 兼容端点 |
+| `R2_BUCKET` | 推荐 | **音乐专用桶**（如 `qingyu-music`） |
+| `R2_PUBLIC_BASE` | 推荐 | 音乐桶公开域名（如 `https://music.example.com`，末尾不带斜杠） |
+| `R2_MEDIA_BUCKET` | 可选回退 | 媒体桶：音乐桶两项缺任一项时用它 |
+| `R2_MEDIA_PUBLIC_BASE` | 可选回退 | 媒体桶公开域名 |
+
+<Note>
+逐项获取方式（控制台路径、格式要求）见 [部署密钥指南](https://github.com/kejiland/qingyu-blog/blob/main/DEPLOYMENT_SECRETS_GUIDE.md)。
+</Note>
 
 ## 表结构
 
@@ -130,11 +239,15 @@ CREATE TABLE music (
   id         TEXT PRIMARY KEY,
   title      TEXT NOT NULL,
   artist     TEXT DEFAULT '',
-  url        TEXT NOT NULL,       -- R2 公开地址（R2_PUBLIC_BASE + /music/<key>）
+  url        TEXT NOT NULL,       -- R2 公开地址（公开基址 + /music/<key>）
   cover      TEXT DEFAULT '',
   size       INTEGER DEFAULT 0,   -- 字节
   duration   INTEGER DEFAULT 0,   -- 秒
   sort       INTEGER DEFAULT 0,   -- 排序
-  created_at TEXT DEFAULT ''
+  created_at TEXT DEFAULT ''      -- YYYY-MM-DD
 );
 ```
+
+<Info>
+迁移 `0015_hot_path_indexes.sql` 为 `music` 表补了 `idx_music_sort`，让播放列表的 `sort ASC, created_at ASC` 排序走索引。
+</Info>

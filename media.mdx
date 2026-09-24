@@ -8,8 +8,9 @@ description: "图片上传（R2 直传）与管理接口"
 后台「媒体库」用于管理博客图片。上传采用 **浏览器直传 R2**（与音乐同款 S3 预签名模式），图片文件**不经过 Worker**，D1 `media` 表只存元数据。
 
 - 新上传：`POST /api/media/upload-url` 签发预签名 PUT URL → 浏览器直接 PUT 到 R2 → `POST /api/media` 登记元数据
-- 图片本体一律存 R2：D1 `media` 表只存元数据（url 为 R2 公开地址）
-- 降级：未配置 R2 媒体桶时，`upload-url` 返回 `503`，只读列表仍可用
+- 图片本体一律存 R2 的**媒体专用桶** `R2_MEDIA_BUCKET`（与音乐桶相互独立），D1 `media` 表只存元数据（`url` 为 R2 公开地址）
+- 降级：未配置好 R2 媒体桶时，`upload-url` 返回 `503`，只读列表仍可用
+- 所有媒体接口（含列表）**都需要会话 token**
 
 ```
 浏览器 ──POST /api/media/upload-url──> Worker（SigV4 签名）
@@ -33,12 +34,17 @@ Authorization: Bearer <token>
 }
 ```
 
+| 字段 | 说明 |
+|------|------|
+| `filename` | **必填**，用于取扩展名判定 MIME（`photo.png` → `image/png`） |
+| `size` | 字节数，必须满足 `0 < size ≤ 10MB` |
+
 **响应：**
 
 ```json
 {
   "ok": true,
-  "uploadUrl": "https://<R2端点>/media/xxx.png?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "uploadUrl": "https://<R2端点>/<媒体桶>/media/xxx.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=...",
   "publicUrl": "https://media.example.com/media/xxx.png",
   "key": "media/xxx.png",
   "contentType": "image/png",
@@ -46,10 +52,37 @@ Authorization: Bearer <token>
 }
 ```
 
-- 图片格式白名单：`png / jpg / jpeg / webp / gif / svg / avif / bmp / ico`
-- 单文件大小 ≤ 10MB
-- 预签名 URL 有效期 1 小时（SigV4 + `UNSIGNED-PAYLOAD`）
-- 返回 `503`：R2 媒体桶未配置（缺少 `R2_MEDIA_BUCKET` / R2 凭据）
+### 签名细节（浏览器直传必须对齐）
+
+| 项 | 值 |
+|----|-----|
+| 签名算法 | AWS SigV4（HMAC-SHA256），`X-Amz-SignedHeaders` = **`content-type;host`** |
+| 载荷哈希 | `UNSIGNED-PAYLOAD` |
+| 有效期 | **3600 秒**（`X-Amz-Expires=3600`） |
+| 路径编码 | 按 RFC 3986 **逐段编码**（`!'()*` 也转义），最终 URL 与签名用的路径完全一致，否则 R2 会返回 `SignatureDoesNotMatch` |
+| `Content-Length` | **不参与签名**——由浏览器自动生成，各家实现差异会导致 `403`，且该 `403` **不带 CORS 头**（前端只能看到 `xhr.onerror`，难以排查） |
+
+<Warning>
+因为 `Content-Type` 参与签名，浏览器 **PUT 时必须原样发送**与响应 `contentType` 完全一致的 `Content-Type`；并且 **R2 桶的 CORS 配置里 AllowedHeaders 必须包含 `Content-Type`**，否则预检（OPTIONS）失败，上传表现为「直接失败、看不到原因」。
+
+R2 桶 CORS 建议同时允许 `PUT` 方法与你的站点来源；`AllowedOrigins` 填博客域名。
+</Warning>
+
+**约束与错误：**
+
+| 项 | 值 / 状态码 |
+|----|------|
+| 图片格式白名单 | `png / jpg / jpeg / webp / gif / svg / avif / bmp / ico` |
+| 单文件大小 | `1B ~ 10MB`（10MB = 10485760 字节） |
+| 不支持的扩展名 | `400`「不支持的图片格式（png / jpg / jpeg / webp / gif / svg / avif / bmp / ico）」 |
+| 大小越界 | `400`「文件大小需在 1B ~ 10MB 之间」 |
+| R2 媒体桶未配置 | `503`「R2 媒体桶未配置（缺少 R2_MEDIA_BUCKET / R2 凭据），无法上传」 |
+| 缺少 / 无效会话 | `401` |
+| 非 POST | `405` |
+
+<Info>
+`503` 的判定要同时具备五项：`R2_MEDIA_BUCKET`、`R2_MEDIA_PUBLIC_BASE`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_ENDPOINT`。**只配桶不配公开域名也会降级为 503**——否则能签发上传 URL 却拼不出 `publicUrl`，上传完只会在桶里留下无法回收的孤儿对象。
+</Info>
 
 浏览器拿到 `uploadUrl` 后直接 `PUT` 上传（`Content-Type` 与响应一致），完成后再登记元数据。
 
@@ -71,9 +104,9 @@ Authorization: Bearer <token>
 }
 ```
 
-`url` 协议白名单：仅允许 `http(s)://`——R2 公开地址或外部图床链接；`data:` / `javascript:` / `vbscript:` 等协议一律 `400` 拒绝（图片本体一律走 R2 直传，不再接受 base64 内嵌）。
+`url` 协议白名单：仅允许 `http(s)://`——R2 公开地址或外部图床链接；`data:` / `javascript:` / `vbscript:` 等协议一律 `400` 拒绝（图片本体一律走 R2 直传，不再接受 base64 内嵌；历史遗留的 base64 记录已由迁移 0014 清除）。
 
-**响应：**
+**响应（`201`）：**
 
 ```json
 {
@@ -89,6 +122,8 @@ Authorization: Bearer <token>
 }
 ```
 
+`id` 由服务端生成（`m-` + 12 字节随机 hex），`name` 截断到 200 字符、`type` 截断到 64 字符。
+
 ## 获取媒体列表（需登录）
 
 ```http
@@ -96,7 +131,7 @@ GET /api/media
 Authorization: Bearer <token>
 ```
 
-**响应：** `{ "ok": true, "media": [ ... ] }`，按 `created_at DESC, id DESC` 排序（`no-store`，增删即时可见）。
+**响应：** `{ "ok": true, "media": [ ... ] }`，按 `created_at DESC, id DESC` 排序，响应头 `Cache-Control: no-store`（增删即时可见）。
 
 ## 删除媒体（需登录）
 
@@ -105,17 +140,33 @@ DELETE /api/media/:id
 Authorization: Bearer <token>
 ```
 
-删除时**先删 R2 对象**（若 `url` 是本站 `/media/` 前缀的公开地址，先向媒体桶发起服务端签名 DELETE），再删 D1 元数据行；外部图床链接不触发 R2 删除。
+删除顺序是**先 R2、后 D1**：
+
+1. 查该行 `url`，用 `extractMediaR2Key` 解析对象 key——**同时校验路径前缀 `/media/` 与 origin 必须等于 `R2_MEDIA_PUBLIC_BASE`**，因此形如 `https://evil.example/media/x` 的外链不会被当成桶内对象
+2. 命中则向**媒体桶**发起服务端签名 DELETE（签名头 `host;x-amz-content-sha256;x-amz-date` + `UNSIGNED-PAYLOAD`）
+3. **R2 删除失败不阻塞**（`try/catch` 吞掉），继续删除 D1 元数据行——避免留下「前端删不掉、库里还有」的幽灵记录；外部图床链接不触发 R2 删除
+4. 删除成功后按 `created_at DESC, id DESC` 的列表立即少掉该项
+
+| 错误 | 状态码 | error |
+|------|--------|-------|
+| 媒体不存在 | `404` | `未找到该媒体` |
+| D1 删除失败 | `500` | `删除失败，请稍后重试` |
+| 缺少 / 无效会话 | `401` | — |
+| 非 DELETE | `405` | `Method not allowed` |
 
 ## 环境变量（GitHub Secrets）
 
-| 变量 | 说明 |
-|------|------|
-| `R2_ACCESS_KEY_ID` | R2 S3 兼容凭据（与音乐共用） |
-| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容凭据 |
-| `R2_ENDPOINT` | R2 S3 兼容端点 |
-| `R2_MEDIA_BUCKET` | **媒体专用桶**（如 `qingyu-media`，独立于音乐桶） |
-| `R2_MEDIA_PUBLIC_BASE` | 媒体桶绑定的自定义域名（如 `https://media.example.com`） |
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `R2_ACCESS_KEY_ID` | ✅ | R2 S3 兼容凭据（**与音乐共用同一组**） |
+| `R2_SECRET_ACCESS_KEY` | ✅ | R2 S3 兼容凭据 |
+| `R2_ENDPOINT` | ✅ | R2 S3 兼容端点（如 `https://<accountid>.r2.cloudflarestorage.com`） |
+| `R2_MEDIA_BUCKET` | ✅ | **媒体专用桶**（如 `qingyu-media`，独立于音乐桶） |
+| `R2_MEDIA_PUBLIC_BASE` | ✅ | 媒体桶绑定的自定义域名（如 `https://media.example.com`，末尾不带斜杠） |
+
+<Note>
+只有一组 R2 凭据，该令牌必须**同时**对媒体桶与音乐桶有读写权限。变量的逐项获取方式见 [部署密钥指南](https://github.com/kejiland/qingyu-blog/blob/main/DEPLOYMENT_SECRETS_GUIDE.md)。
+</Note>
 
 ## 表结构
 
@@ -126,6 +177,10 @@ CREATE TABLE media (
   url        TEXT NOT NULL,       -- R2 公开地址或 http(s) 外链
   type       TEXT DEFAULT '',     -- MIME 类型
   size       INTEGER DEFAULT 0,   -- 字节
-  created_at TEXT DEFAULT ''
+  created_at TEXT DEFAULT ''      -- YYYY-MM-DD
 );
 ```
+
+<Info>
+迁移 `0015_hot_path_indexes.sql` 为 `media` 表补了 `idx_media_created_id`，让上面的列表排序走索引。
+</Info>

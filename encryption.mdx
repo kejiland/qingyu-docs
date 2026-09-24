@@ -1,69 +1,99 @@
 ---
 title: "文章加密"
-description: "端到端加密，密文只存服务端"
+description: "接口预留加密字段，编辑器暂未开放加密 UI"
 ---
 
-## 加密方案
+## 当前状态
+
+<Warning>
+**本节描述的是接口层面的预留能力，不是当前可用的功能。**
+
+- D1 `posts` 表与 API 保留了 `protected` / `enc` 两个字段，受保护文章的明文 `content` **恒为空**，密文只存在 `enc` 里
+- 这样设计的目的：**允许导入外部生成的加密文章**（主仓库 `SECURITY.md` 的原话：「接口预留 `enc` / `protected` 字段，可导入外部加密文章」）
+- 后台编辑器**没有**加密 UI——它只提供标题 / 标签 / 封面 / 置顶 / 正文，**没有**「加密」勾选项；分类 / 发布状态也不在编辑器里（分类功能已在 v2.2 移除，`posts.category` 列保留兼容）
+- 前端**没有**解密入口：`app.js` 不给带 `enc` 或 `protected` 的文章挂载 AI 摘要入口，也不会提示访客输入密码
+</Warning>
+
+## 字段语义
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `protected` | 0 / 1（SQLite）· boolean（API） | 受保护标记 |
+| `enc` | JSON 对象或 `null` | 密文容器，默认形态 `{salt, iv, data}` |
+| `content` | 字符串 | 受保护文章的 `content` **恒为空**，避免明文外泄 |
+
+**判定规则**（`api-core.js` 的 `normalizePost` / `postFromRow` 使用同一不变式）：
+
+```
+protectedPost = !!p.protected && p.enc && typeof p.enc === 'object'
+```
+
+只有 `protected` 为真**且** `enc` 是一个对象时，才被视为受保护文章。任一不满足时 `enc` 归一化为 `null`、按普通文章处理。
+
+## 加密方案（外部生成密文时使用）
 
 | 算法 | 用途 |
 |------|------|
 | PBKDF2-SHA256 | 从用户密码派生加密密钥 |
 | AES-GCM | 对称加密文章正文 |
 
-## 加密流程
-
 ```mermaid
 graph LR
     A[用户密码] --> B[PBKDF2 派生密钥]
     B --> C[AES-GCM 加密]
-    C --> D[密文 JSON]
-    D --> E[存入 D1]
+    C --> D["密文 JSON {salt, iv, data}"]
+    D --> E[写入 posts.enc]
+    E --> F[protected = 1, content = '']
 ```
 
 1. 生成随机盐值（salt）
-2. PBKDF2-SHA256 派生 256 位密钥
+2. PBKDF2-SHA256 派生密钥
 3. 生成随机 IV，AES-GCM 加密正文
-4. 存储 `JSON({salt, iv, data})` 到 `enc` 字段
+4. 写入 `enc` = `JSON({salt, iv, data})`，同时 `protected = 1`、`content = ''`
 
-## 解密流程
+<Note>
+服务端**不做**加解密：它只负责存取密文与保证明文 `content` 不出库。加解密如果要做，只在客户端。
+</Note>
 
-1. 获取文章的 `enc` 字段
-2. 用户输入密码
-3. **前端** PBKDF2 派生密钥 + AES-GCM 解密
-4. 显示明文
-
-<Info>
-解密完全在前端完成，密码永远不发送到服务端。即使服务端被攻破也无法获得明文。
-</Info>
-
-## 安全特性
-
-| 特性 | 说明 |
-|------|------|
-| 零知识 | 服务端不知道密码 |
-| 端到端 | 加密/解密都在浏览器 |
-| 强密钥 | PBKDF2 100,000 次迭代 |
-| 随机盐值 | 每篇文章独立盐值 |
-| 随机 IV | 每次加密新 IV |
-
-## 加密文章的特殊行为
+## 受保护文章的行为
 
 | 场景 | 行为 |
 |------|------|
-| RSS / Sitemap | 自动排除 |
-| 列表展示 | 显示锁定图标，摘要隐藏 |
-| 搜索 | 标题/标签可搜索，正文不可搜索 |
+| `GET /api/posts`（列表） | 返回**已发布**文章摘要：`content` 与 `enc` 一律被剥离；受保护文章不附加 `search` 字段 |
+| `GET /api/posts/:id`（详情） | 返回 `protected: true`、`content: ''`、`enc: {salt, iv, data}` |
+| RSS（`/feed.xml`） | 受保护文章**自动排除** |
+| Sitemap（`/sitemap.xml`） | 受保护文章仍会出现在 URL 列表中（`/posts/<id>/`），但页面内没有正文 |
+| 站内搜索 | 非加密文章才带 `search` 字段（正文前 800 字），因此受保护文章的正文**不可搜索** |
+| 精选文章 | 不单独过滤受保护文章，但列表接口已剥离 `content` / `enc`，卡片只展示标题与计数值 |
+| AI 摘要 | 带 `enc` 或 `protected` 的文章不生成 AI 摘要（卡片与详情页都不挂载摘要入口） |
 
-## 使用方式
+<Info>
+写入路径已保证受保护文章的 `content` 为空；读取路径（`postFromRow`）在出库前**再兜一层**——即使历史数据或手工 SQL 留下了明文，`GET /api/posts/:id` 也不会泄漏出去。
+</Info>
 
-### 加密文章
+## 导入外部加密文章
 
-写作台 → 勾选「加密」→ 输入密码 → 保存
+由于编辑器没有加密 UI，要走加密路径需要直接调 API（需会话 token）：
 
-### 阅读加密文章
+```bash
+curl -X POST https://你的域名/api/posts \
+  -H "Authorization: Bearer <session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "secret-note",
+    "title": "加密文章示例",
+    "date": "2025-01-01",
+    "excerpt": "这是一篇受保护的文章",
+    "protected": true,
+    "enc": { "salt": "<hex>", "iv": "<base64>", "data": "<base64>" },
+    "status": "published"
+  }'
+```
 
-打开文章 → 输入密码 → 浏览器中解密显示
+再次强调：`content` 请留空，明文只应存在于客户端。
 
-<Warning>
-密码丢失无法恢复。请妥善保管加密密码。
-</Warning>
+## 相关页面
+
+- [安全设计](/security-overview) —— 密码 / 会话 / 登录限流 / 接口安全全貌
+- [文章接口](/posts) —— 列表与详情对 `content` / `enc` 的处理
+- [数据库结构](/schema) —— `posts` 表字段

@@ -1,7 +1,18 @@
 ---
 title: "站点设置"
-description: "站点配置的读写接口"
+description: "站点配置的六个键与读写接口"
 ---
+
+后台「博客设置」页的所有内容都持久化到 D1 的 `site_settings` 表，通过 `/api/settings` 读写。这不是任意键值存储——**业务上只有六个键**：
+
+| Key | 值（JSON 字符串） | 说明 |
+|-----|------|------|
+| `site_info` | `{name, desc, avatar, copyright, footerText, about}` | 站点信息：名称 / 简介 / 站点头像（同时用作 favicon 与后台左上角品牌 Logo）/ 版权署名 / 页脚声明 / 关于页正文 |
+| `profile` | `{name, bio, avatar, email}` | 个人资料：昵称 / 简介 / 头像（后台左下角）/ 联系邮箱 |
+| `nav_menu` | `[{text, url, i18n?}]` | 顶部导航菜单项数组 |
+| `footer_nav` | `[{text, url}]` | 底部导航链接数组 |
+| `friend_links` | `[{text, url}]` | 友情链接数组 |
+| `moderate_comments` | `"1"` / `"0"` | 评论审核开关（**只有严格等于 `"1"` 才开启**） |
 
 ## 获取设置
 
@@ -9,26 +20,31 @@ description: "站点配置的读写接口"
 GET /api/settings
 ```
 
+公开接口，**不需要认证**（内容都是站点配置，无敏感信息）。
+
 **响应：**
 
 ```json
 {
   "ok": true,
   "settings": {
-    "site_info": "{\"name\":\"我的博客\",\"desc\":\"一个个人博客\",\"avatar\":\"https://...\",\"copyright\":\"\",\"footerText\":\"\",\"about\":\"\"}",
-    "profile": "{\"name\":\"站长\",\"bio\":\"\",\"avatar\":\"\",\"email\":\"\"}",
+    "site_info": "{\"name\":\"我的博客\",\"desc\":\"一个个人博客\",\"avatar\":\"https://...\",\"copyright\":\"© 2025\",\"footerText\":\"本站声明\",\"about\":\"关于我\"}",
+    "profile": "{\"name\":\"站长\",\"bio\":\"\",\"avatar\":\"\",\"email\":\"me@example.com\"}",
+    "nav_menu": "[{\"text\":\"首页\",\"url\":\"/\"},{\"text\":\"归档\",\"url\":\"/archive\"}]",
+    "footer_nav": "[{\"text\":\"Docs\",\"url\":\"https://docs.example.com/\"}]",
+    "friend_links": "[{\"text\":\"语幕\",\"url\":\"https://example.com\"}]",
     "moderate_comments": "1"
   }
 }
 ```
 
-`settings` 是**扁平键值表**，每个值都是 JSON 字符串（读取端自行解析）。常见键：
+`settings` 是**扁平键值表**，每个值都是** JSON 字符串**——`site_info` / `profile` 是对象，`nav_menu` / `footer_nav` / `friend_links` 是数组，`moderate_comments` 是裸字符串 `"1"` / `"0"`。**读取端需自行 `JSON.parse`**（`moderate_comments` 例外，它本身就是字符串）。
 
-| Key | 值（JSON 字符串） | 说明 |
-|-----|------|------|
-| `site_info` | `{name, desc, avatar, copyright, footerText, about}` | 站点信息；`avatar` 为站点头像 URL，同时用作 favicon 与后台左上角品牌 Logo |
-| `profile` | `{name, bio, avatar, email}` | 个人资料；`avatar` 显示在后台左下角 |
-| `moderate_comments` | `"1"` / `"0"` | 评论审核开关 |
+响应头 `Cache-Control: public, s-maxage=60, stale-while-revalidate=300`。
+
+<Note>
+表里只需存在实际设置过的键：任何一个键缺失时对应位置回退到 `config.js` 的静态配置或内置默认值，接口不会补默认键。
+</Note>
 
 ## 更新设置
 
@@ -37,7 +53,11 @@ PUT /api/settings
 Authorization: Bearer <token>
 ```
 
-**请求体为扁平对象**（键 → 值；非字符串值会自动 JSON 序列化存储）：
+<Info>
+`POST /api/settings` 亦可（与 PUT 等价）；其他方法返回 `405`「Method not allowed」。
+</Info>
+
+**请求体为扁平对象**（键 → 值；**非字符串值会自动 `JSON.stringify` 序列化后存储**）：
 
 ```json
 {
@@ -55,12 +75,45 @@ Authorization: Bearer <token>
     "avatar": "",
     "email": "me@example.com"
   },
+  "nav_menu": [
+    { "text": "首页", "url": "/" },
+    { "text": "归档", "url": "/archive" }
+  ],
+  "footer_nav": [
+    { "text": "Docs", "url": "https://docs.example.com/" }
+  ],
+  "friend_links": [
+    { "text": "语幕", "url": "https://example.com" }
+  ],
   "moderate_comments": "1"
 }
 ```
 
-- 写入为**合并式 upsert**（`INSERT ... ON CONFLICT(k) DO UPDATE`），只覆盖请求中包含的键，其余键保持不变
-- 需要会话 Token 鉴权
+**响应：**
+
+```json
+{ "ok": true, "saved": 6 }
+```
+
+`saved` 是本次写入的键数量。
+
+- 写入为**合并式 upsert**（`INSERT ... ON CONFLICT(k) DO UPDATE SET v = excluded.v`），只覆盖请求中包含的键，其余键保持不变
+- **批量原子执行**：任一键写入失败则整批回滚并返回 `500`「设置保存失败，请稍后重试」，不会出现「设置写了一半」
+- 需要会话 Token 鉴权，缺少 / 无效返回 `401`
+- 请求体不是对象返回 `400`「缺少配置对象」
+
+<Warning>
+**云端设置会覆盖静态配置**：`site_info.copyright` 覆盖 `config.js` 的 `footer.copyrightName`，`site_info.footerText` 覆盖 `footer.decl`，`nav_menu` 覆盖内置 `NAV` 数组，`footer_nav` 覆盖 `footer.contact`，`friend_links` 覆盖 `footer.links`，`profile.email` 覆盖 `footer.email`。只有 D1 里该键**存在且非空**时才覆盖，否则继续用 `config.js` 的兜底值。
+</Warning>
+
+### `moderate_comments` 的取值
+
+| 值 | 效果 |
+|------|------|
+| `"1"` | 开启审核：新评论写入 `status: 'pending'`，后台通过后访客才可见 |
+| `"0"` / 缺失 / 其他任意值 | 关闭审核：新评论直接 `approved`（默认） |
+
+判定是**严格等值比较**（`v === '1'`），`"true"` / `"on"` / 数字 `1`（会存成 `"1"`，可生效）等写法请统一用字符串 `"1"`。详见[评论 · 评论审核开关](/comments)。
 
 ## 表结构
 
@@ -70,3 +123,9 @@ CREATE TABLE site_settings (
   v TEXT NOT NULL        -- 值（JSON 字符串）
 );
 ```
+
+## 相关页面
+
+- 评论审核开关的作用范围：[评论](/comments)
+- 前台如何解析这些键（`pageSize` / `footer.*` / `ads.*` 等静态配置）：[配置说明](/configuration)
+- 导航与页脚的优先级：云端 D1 设置 > `config.js` 静态兜底

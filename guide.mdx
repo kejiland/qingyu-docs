@@ -25,7 +25,40 @@ git clone https://github.com/kejiland/qingyu-blog.git
 cd qingyu-blog
 ```
 
-双击 `public/index.html` 即可开始，无需安装依赖。
+双击 `public/index.html` 即可开始，无需安装依赖。涉及云端接口时改用：
+
+```bash
+npx wrangler dev -c wrangler.workers.toml   # 需先把 {env.BLOG_KV_ID} 等占位符换成真实 id
+```
+
+### 提交前自测
+
+```bash
+node smoke-test.js      # 冒烟测试 78 例
+node gb-verify.js       # 留言板专项验证 18 例
+node search-verify.js   # 搜索专项验证 13 例
+```
+
+三套测试为零依赖纯 Node 脚本；CI 部署前会跑一遍，失败即中止部署。
+
+### 修改前端源码后重新压缩
+
+仓库的「零构建」指的是运行时不需要构建步骤，但 `public/` 下的 `*.min.js` / `*.min.css` 是**提交进仓库**的产物，改完源码需要手动重新生成：
+
+```bash
+node scripts/minify.mjs   # 依赖 npx terser 与 clean-css-cli，首次运行需联网
+```
+
+### 重新生成 README 截图
+
+`screenshots/` 中的图片由可复现工具生成，不需要手工截图：
+
+```bash
+node scripts/screenshots/capture.mjs                 # 生成全部截图
+node scripts/screenshots/capture.mjs --only home,admin
+```
+
+它由 `scripts/screenshots/` 三个文件组成：`demo-content.mjs`（示例文章 / 评论 / 音乐数据）、`demo-server.mjs`（本地 mock API 服务器）、`capture.mjs`（无头 Chrome 驱动）。前置条件是本机安装 Chrome 或 Edge，并可选安装 `puppeteer-core`（开发依赖，站点运行时不需要）。
 
 ### PR 流程
 
@@ -37,6 +70,8 @@ cd qingyu-blog
 
 ### Commit 规范
 
+采用 [Conventional Commits](https://www.conventionalcommits.org/)：
+
 | 前缀 | 说明 |
 |------|------|
 | `feat:` | 新功能 |
@@ -47,11 +82,35 @@ cd qingyu-blog
 | `test:` | 测试 |
 | `chore:` | 构建/工具 |
 
+```
+feat(comments): add nested reply support
+
+Implement parent_id field for comment threading.
+
+Closes #42
+```
+
+## 文档中英双语约定
+
+主仓库的文档**全部中英双语**，两种形态：
+
+| 文档类型 | 约定 | 例子 |
+|----------|------|------|
+| 长文档 | 成对文件 `X.md` + `X_EN.md`，两个文件首行互相链接做语言切换 | `README.md` / `README_EN.md`、`CLOUDFLARE_SETUP_GUIDE.md` / `CLOUDFLARE_SETUP_GUIDE_EN.md`、`SECURITY.md` / `SECURITY_EN.md` |
+| 短文档 | 单个文件内中英对照 | `CONTRIBUTING.md`、Issue / PR 模板 |
+
+新增或修改文档时请同时更新两个文件（或同一文件的两段），并把新文档补进 `README.md` 的「文档索引」表。
+
+<Note>
+本站（`docs.2024921.xyz`）是**中文单语**文档站；英文内容请写进主仓库的 `*_EN.md`，不要在本站新增英文页面。
+</Note>
+
 ## 翻译贡献
 
-翻译文件位于 `public/locales/<lang>.json`，欢迎修正或添加语言。
+界面翻译文件位于 `public/locales/<lang>.json`（`zh-CN` / `en` / `ja` / `ko` / `hi`，每种语言键集完全一致），欢迎修正现有翻译或添加新语言。改动语言包后请同步递增 `public/i18n.js` 中的 `I18N_VER`，以强制浏览器拉取新文件。详见[国际化](/i18n)。
 
 ## 文档改进
 
 - 修正错别字或过时信息
 - 添加教程或截图
+- 本站页面统一使用中文、Mintlify MDX（frontmatter 仅 `title` 与 `description`），跨仓库链接请用 GitHub 绝对地址

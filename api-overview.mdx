@@ -5,23 +5,48 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 
 ## 接口分组
 
+所有 API 由 `functions/_lib/` 下的同一份核心代码实现，被 **Cloudflare Workers**（`worker.js` 路由分发）与 **Cloudflare Pages Functions**（`functions/api/` 下的路由文件）复用。**部署形态会决定部分端点的可用性**（见下方「Workers 与 Pages 的差异」）。
+
 | 分组 | 端点 | 鉴权 | 说明 |
 |------|------|------|------|
-| 文章 | `GET/POST /api/posts`、`GET/PUT/DELETE /api/posts/:id` | 写操作需要 | 文章 CRUD，支持加密 / 置顶；**删除文章时级联清理其评论、点赞/浏览量及每日聚合**（见[文章](/posts)） |
-| 评论 | `GET/POST /api/posts/:id/comments`、`PUT/DELETE /api/comments/:id` | 发表公开；审核删除需要 | 嵌套回复、审核模式、重复拦截 |
-| 留言板 | 复用评论接口（`:id` = `gb-note` / `gb-idea`） | 同评论 | 见[留言板](/guestbook) |
-| 统计 | `GET/POST /api/posts/:id/stats` | 公开 | 阅读数 / 点赞 |
-| 媒体 | `POST /api/media/upload-url`、`GET/POST /api/media`、`DELETE /api/media/:id` | 需要 | **图片 R2 直传**（预签名 URL）+ D1 元数据登记（仅 http/https，见[媒体](/media)） |
-| 音乐 | `GET /api/music`（公开）、`POST /api/music/upload-url`、`POST /api/music`、`DELETE /api/music/:id` | 读写需登录 | R2 预签名直传 + 播放列表，见[音乐](/music) |
-| 设置 | `GET/PUT /api/settings` | 读取公开 | 站点信息 / 导航 / 资料 |
-| AI | `GET /api/ai/ping`、`POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 公开；其余需登录 / 需绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；未绑定、未配置 D1 或开关关闭时返回 404 |
-| 管理认证 | `/api/admin/*`（setup / login / logout / password） | — | 首次设密 / 登录 / 登出 / 改密 |
-| 站点产物 | `GET/POST /api/site-files`、`GET /api/site-files/:name` | 写入需要 | feed.xml / sitemap.xml / posts.js |
-| Feed | `GET /feed.xml`、`GET /sitemap.xml`、`GET /api/feed.xml`、`GET /api/sitemap.xml` | 公开 | RSS 与站点地图，实时生成，文章增删改查后自动更新 |
+| 文章 | `GET/POST /api/posts`、`GET/PUT/DELETE /api/posts/:id` | 列表与详情公开（草稿除外）；写操作需会话 | 文章 CRUD；**列表只返回已发布摘要**（不含 `content` / `enc`），详情才带正文；草稿需鉴权。见[文章](/posts) |
+| 评论 | `GET/POST /api/posts/:id/comments`、`DELETE /api/posts/:id/comments/:cid`、`GET /api/comments`、`PUT/POST /api/comments/:id`、`DELETE /api/comments/:id` | 发表公开；其余需会话 | 3 层嵌套、每篇 300 条、每 IP 5 条/分钟、重复内容 409、`moderate_comments` 审核。见[评论](/comments) |
+| 留言板 | 复用评论接口（`:id` = `gb-note` / `gb-idea`） | 同评论 | 两个合成分区 ID，见[留言板](/guestbook) |
+| 统计 | `GET/POST /api/posts/:id/stats`、`GET /api/stats/trend?days=1~90` | 计数公开；趋势需会话 | 阅读 / 点赞 + 后台趋势聚合，见[统计](/stats) |
+| 媒体 | `POST /api/media/upload-url`、`GET/POST /api/media`、`DELETE /api/media/:id` | **全部需会话** | 图片 R2 预签名直传 + D1 元数据登记（仅 http/https），见[媒体](/media) |
+| 音乐 | `GET /api/music`（公开）、`POST /api/music/upload-url`、`POST /api/music`、`PUT/DELETE /api/music/:id` | 除列表外均需会话 | R2 预签名直传 + 播放列表，**仅 Workers 部署可用**，见[音乐](/music) |
+| 设置 | `GET/PUT /api/settings` | 读取公开、写入需会话 | 六个站点配置键，见[站点设置](/settings) |
+| AI | `GET /api/ai/ping`、`GET/POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 与摘要可匿名；其余需登录并绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；未绑定、未配置 D1 或开关关闭时返回 404 |
+| 管理认证 | `/api/admin/setup`、`/api/admin/login`、`/api/admin/logout`、`/api/admin/password` | 见[管理后台](/admin) | 首次设密 / 登录 / 登出 / 改密（密码 ≥ 8 位，会话 7 天） |
+| 站点产物 | `GET/POST /api/site-files`、`GET /api/site-files/:name` | 写入需会话 | feed.xml / sitemap.xml / posts.js 的云端副本 |
+| Feed | `GET /feed.xml`、`GET /sitemap.xml`、`GET /api/feed.xml`、`GET /api/sitemap.xml` | 公开 | RSS 与站点地图，实时从 D1 生成，文章增删改后自动更新 |
 
 <Info>
 各端点的完整请求/响应示例见「API 参考」分组下的对应页面。
 </Info>
+
+## Workers 与 Pages 的差异
+
+| 能力 | Workers 部署（`worker.js`） | Pages 部署（`functions/`） |
+|------|------|------|
+| 文章 / 评论 / 统计 / 媒体 / 设置 / 管理认证 / 站点产物 | ✅ | ✅ |
+| `/api/music*`（播放列表 / 上传 / 注册 / 编辑 / 删除） | ✅ | ❌ **无对应函数文件**，请求落到 JSON 404 兜底 |
+| AI（`/api/ai/*`） | ✅ 需 `[ai] binding = "AI"`；未绑定则 404 | ⚠️ 函数文件存在，但 `wrangler.toml` 里没有 Workers AI 绑定，因此恒返回 `404`（前端自动隐藏 AI 入口） |
+| 未知 `/api/*` | JSON 404（`worker.js` 直接拦截） | JSON 404（`functions/api/[[path]].js` 兜底） |
+
+<Warning>
+`/api/music*` **只在 `worker.js` 里实现**，`functions/` 下没有 `music` 目录。因此在 Cloudflare **Pages** 部署下这些路由没有函数文件可命中，会被 `/api/*` 兜底返回 JSON 404 —— **音乐功能需要 Workers 部署**。
+</Warning>
+
+未知的 `/api/*` 路径一律返回 JSON 404，**绝不回退到 `index.html`**（避免调用方拿到 HTML 再 `.json()` 抛出难懂的解析错误）。Pages 侧的兜底响应带一段 `hint`：
+
+```json
+{
+  "ok": false,
+  "error": "Not Found",
+  "hint": "该 API 路径不存在。请检查路径拼写，或确认对应后端模块（如音乐上传 /api/music/upload-url）是否已部署。"
+}
+```
 
 ## 鉴权方式
 
@@ -31,19 +56,26 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 Authorization: Bearer <token>
 ```
 
-令牌由 `/api/admin/login` 签发（32 字节随机 hex，7 天有效），前端存于 `localStorage` 并由 `apiFetch` 自动附带。
+令牌由 `/api/admin/login` 签发（32 字节随机数 → 64 位十六进制字符串），有效期 **7 天**，存于 D1 `admin_sessions` 表；前端存 `localStorage` 并由 `apiFetch` 自动附带。为兼容旧配置，写鉴权仍接受环境变量 `BLOG_WRITE_TOKEN` 作为静态长令牌。
+
+<Note>
+浏览器直传 R2 时，预签名 PUT 的签名头包含 `content-type`，因此浏览器必须**原样发送** `Content-Type`，且 R2 桶 CORS 的 AllowedHeaders 必须包含 `Content-Type`（缺失会让浏览器报预检失败）。
+</Note>
 
 ## 错误码约定
 
 | 状态码 | 场景 |
 |--------|------|
-| `400` | 参数缺失 / 非法 / 超限 |
-| `401` | 未登录或会话过期 |
-| `403` | Origin 校验失败（跨站写请求） |
-| `404` | 资源不存在；未知 `/api/*` 路径同样返回 JSON 404（绝不回退到 SPA 页面） |
+| `400` | 参数缺失 / 非法 / 超限（如密码不足 8 位、图片格式不在白名单、文件超过 10MB） |
+| `401` | 未登录、会话过期，或密码错误（`/api/admin/login`、`/api/admin/password`） |
+| `403` | Origin 校验失败（跨站发表评论）；安装密钥 `X-Setup-Key` 不匹配 |
+| `404` | 资源不存在；未知 `/api/*` 路径同样返回 JSON 404（绝不回退到 SPA 页面）；草稿对未登录调用方也返回 404 |
 | `405` | 方法不允许 |
-| `409` | 内容冲突——当前用于**评论 / 留言重复发送拦截**（同分区同昵称同内容） |
-| `429` | 频率限制（评论每 IP 每分钟 5 条） |
+| `409` | 内容冲突：**评论 / 留言重复发送拦截**（同分区同昵称同内容）、文章 `id` 已存在、重置已有管理员密码 |
+| `429` | 频率限制：评论 5 条/分钟/IP、点赞 10 次/分钟/IP、浏览 30 次/分钟/IP、登录失败限流 |
+| `500` | 未捕获异常（统一回「服务端内部错误」）；D1 未绑定（`数据库未配置：请创建并绑定名为 DB 的 D1 数据库`） |
+| `502` | 音乐删除时 R2 对象删除失败（D1 行保留，保证数据一致） |
+| `503` | 未配置 R2 凭据，上传接口不可用（读取与其余功能不受影响） |
 
 **错误响应统一格式：**
 
@@ -55,5 +87,9 @@ Authorization: Bearer <token>
 
 ## CORS 与缓存
 
-- **CORS**：配置 `SITE_URL` 后仅回显本站来源；未配置时回显请求来源。跨站写请求会被 403。
-- **缓存**：只读接口 `s-maxage=60`，RSS/Sitemap `s-maxage=300`，写操作一律 `no-store`。详见[项目架构 · 缓存策略](/architecture)。
+- **CORS**：配置 `SITE_URL` 后只允许「站点来源 + 请求自身来源」；`env.SITE_URL` 与当前请求 origin 都不匹配时不返回 `Access-Control-Allow-Origin`，浏览器会拦下跨站读取。**未配置 `SITE_URL` 时 fail-closed（不返回 ACAO）**，不再是旧版的「回显任意来源」。
+- **允许的请求头**：`Content-Type`、`Authorization`、`X-Setup-Key`；允许的方法：`GET, POST, PUT, DELETE, OPTIONS`；响应带 `Vary: Origin`，避免跨域缓存命中错误副本。
+- **安全响应头**：API 与静态响应统一注入 `Content-Security-Policy`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: SAMEORIGIN`、`Cross-Origin-Opener-Policy: same-origin`。
+- **客户端 IP**：所有按 IP 的限流与去重只信任 Cloudflare 注入的 `CF-Connecting-IP`，不读可被伪造的 `X-Forwarded-For`。
+- **缓存**：只读接口 `public, s-maxage=60, stale-while-revalidate=300`，RSS/Sitemap `public, s-maxage=300, stale-while-revalidate=600`，评论列表与全部写操作 `no-store`。写操作后按 `Cache-Tag`（`posts` / `feed` / `sitemap` / `post:<id>` / `stats:<id>`）主动清边缘缓存，需要 `CF_API_TOKEN` + `CF_ZONE_ID`。详见[项目架构](/architecture)。
+- **静态资源**：带 `?v=` 版本号或位于 `/fonts/`、`/flags/`、`/libs/smoji/` 下的文件 `max-age=31536000, immutable`；其他带扩展名的静态文件 `max-age=3600, stale-while-revalidate=86400`；无扩展名的 HTML 入口 `no-cache`。

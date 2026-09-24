@@ -7,10 +7,14 @@ description: "代码风格和开发规范"
 
 | 原则 | 说明 |
 |------|------|
-| **零依赖** | 不引入第三方库 |
-| **零构建** | 不用 Webpack/Vite |
+| **零依赖** | 不引入第三方库（`public/libs/smoji/` 为随仓库分发的例外） |
+| **零构建** | 运行时不用 Webpack/Vite，浏览器直接加载源码 |
 | **零框架** | 纯原生 JavaScript |
 | **可读性** | 代码即文档 |
+
+<Note>
+「零构建」指运行时不经过打包：源码 `public/*.js`、`public/*.css` 直接可读，同时仓库里提交了对应的 `*.min.js` / `*.min.css` 产物供线上加载。产物由 `node scripts/minify.mjs` 生成，**不要手工编辑**。
+</Note>
 
 ## JavaScript 规范
 
@@ -37,16 +41,28 @@ description: "代码风格和开发规范"
 
 2 空格。
 
+### 兼容性
+
+- 前端只使用浏览器原生 API（无 polyfill、无转译），因此 `public/*.js` 保持 ES5 风格写法（`var` / `function`），便于 `file://` 直接预览
+- 后端 `functions/` 与 `worker.js` 运行在 Workers 运行时，可使用 ES Module 语法（`import` / `export`）
+
 ## SQL 规范
 
-- 使用 `CREATE TABLE IF NOT EXISTS`
-- 索引 `CREATE INDEX IF NOT EXISTS`
-- 查询使用参数化
+- 新建表使用 `CREATE TABLE IF NOT EXISTS`
+- 索引使用 `CREATE INDEX IF NOT EXISTS`
+- 查询使用参数化绑定（`db.prepare(sql).bind(...)`），不拼接字符串
+- **SQLite 没有 `ADD COLUMN IF NOT EXISTS`**：加列迁移无法幂等，必须在 `.github/workflows/deploy.yml` 的列预检 `case` 分支里登记「表名 + 列名」，详见[迁移脚本](/migrations)
+- 索引列顺序遵循 `(等值过滤列 …, 排序列 …)`，让 SQLite 免去临时排序；注意 SQLite 不允许把 `rowid` 用作索引列
 
 ## CSS 规范
 
-- CSS 变量定义主题色
+- CSS 变量定义主题色（明暗主题 × 4 种强调色：`terra` / `indigo` / `bamboo` / `dusk`）
 - 响应式断点统一
+- 新增重资源（播放器、背景动画等）不要在首屏关键路径加载
+
+## 文档规范
+
+主仓库文档**中英双语**：长文档采用 `X.md` + `X_EN.md` 成对文件（首行互相链接做语言切换），短文档在单个文件内中英对照；新增文档要补进 `README.md` 的「文档索引」表。中文表述是权威版本，英文版与中文版同步更新。
 
 ## Git 规范
 
@@ -65,5 +81,9 @@ Closes #42
 ## 测试
 
 ```bash
-node smoke-test.js
+node smoke-test.js      # 冒烟测试 78 例
+node gb-verify.js       # 留言板专项验证 18 例
+node search-verify.js   # 搜索专项验证 13 例
 ```
+
+三套测试都只用 Node 内置模块（无网络、无凭据依赖），CI 部署前自动运行，失败即中止。修改前端渲染、评论/留言板、搜索相关逻辑后请一并补测试用例。

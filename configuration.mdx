@@ -5,6 +5,8 @@ description: "public/config.js 完整配置说明"
 
 ## 完整配置示例
 
+以下是 `public/config.js` 出厂状态的等价写法（真实默认值）：
+
 ```javascript
 window.BLOG_CONFIG = {
   mode: 'auto',
@@ -17,20 +19,26 @@ window.BLOG_CONFIG = {
   footer: {
     text: '',
     icp: '',
-    contact: [],
-    links: [],
-    decl: '',
-    email: '',
+    contact: [
+      { text: 'Docs', url: 'https://docs.2024921.xyz/' },
+      { text: 'GitHub', url: 'https://github.com/kejiland/qingyu-blog' }
+    ],
+    links: [
+      { text: '语幕', url: 'https://www.yumus.cn' }
+    ],
+    decl: '本站部分内容转载自网络，作品版权归原作者及来源网站所有……',
+    email: 'admin@cloumail.com',
     startYear: 2019,
     copyrightName: "Qingyu'Blog"
   },
 
   ads: {
     enabled: false,
+    client: 'ca-pub-4096395942817870',
     belowSearch: '',
     between: '',
     betweenEvery: 3,
-    content: ''
+    content: '<ins class="adsbygoogle" …></ins><script>(adsbygoogle = window.adsbygoogle || []).push({})</script>'
   }
 };
 ```
@@ -41,7 +49,7 @@ window.BLOG_CONFIG = {
 
 | 值 | 说明 |
 |----|------|
-| `'auto'` | **（推荐）** 自动检测：请求 `/api/posts` 成功 → 云端；失败 → 静态 |
+| `'auto'` | **（默认，推荐）** 自动检测：请求 `/api/posts` 成功 → 云端；失败 → 静态 |
 | `'static'` | 强制静态模式，只用 `posts.js` |
 | `'api'` | 强制云端模式，需要后端 API |
 
@@ -50,22 +58,29 @@ window.BLOG_CONFIG = {
 后端 API 基础地址。
 
 - **留空**（默认）：同源请求
-- **填写 URL**：如 `https://www.2024921.xyz`（跨域时后端需已配 CORS）
+- **填写 URL**：如 `https://www.2024921.xyz`（跨域时后端需已配 CORS；`SITE_URL` 未配置或与来源不匹配时，后端不回 CORS 头）
 
 ### siteUrl
 
-站点对外地址，用于生成 RSS/Sitemap 链接。如 `https://www.2024921.xyz`（不带末尾斜杠）。
+站点对外地址，用于生成 RSS / Sitemap 链接与 canonical。例：`https://www.2024921.xyz`（不带末尾斜杠）。留空时前端回退为当前页面来源。
+
+### writeToken
+
+可选。旧版静态写入令牌，对应后端环境变量 `BLOG_WRITE_TOKEN`。现已推荐改用会话登录（`/api/admin/login` 返回 7 天 token），普通用户无需填写。
 
 ### pageSize
 
-首页每页显示文章数。设为 `0` 不分页。
+首页每页显示文章数，默认 `5`。
+
+- 设为 `0`：不分页，全部显示
+- **非数字（或负数）会回退为 `8`**：`getConfig()` 只在 `typeof pageSize === 'number' && pageSize >= 0` 时采用配置值
 
 ### adminPwd
 
 | 模式 | 行为 |
 |------|------|
-| 云端模式 | **请留空**。密码在 D1 后端，前端拿不到 |
-| 静态模式 | 可填固定密码，或留空让浏览器本地设置 |
+| 云端模式 | **请留空**。密码在 D1 后端（PBKDF2-SHA256 加盐哈希），前端拿不到；服务端强制至少 8 位 |
+| 静态模式 | 可填固定密码，或留空让浏览器本地设置（仅防君子） |
 
 ## 页脚配置 (footer)
 
@@ -74,18 +89,35 @@ window.BLOG_CONFIG = {
 | `text` | `string` | 页脚自定义文字 |
 | `icp` | `string` | 备案号 |
 | `contact` | `Array` | **页脚导航**链接 `{text, url}`：底部导航栏的链接列表，可自由增删；站内路径（如 `/tags`）自动带部署前缀，外部链接（`https://...`）自动新窗口打开。未配置时回退为站点主导航 |
-| `links` | `Array` | 友情链接列表 `{text, url}` |
-| `decl` | `string` | 站点声明 |
-| `email` | `string` | 联系邮箱 |
-| `startYear` | `number` | 版权起始年 |
-| `copyrightName` | `string` | 版权署名 |
+| `links` | `Array` | 友情链接列表 `{text, url}`，电脑端显示为「友情链接：…」 |
+| `decl` | `string` | 站点声明（电脑端显示） |
+| `email` | `string` | 侵权/举报联系邮箱（电脑端显示） |
+| `startYear` | `number` | 版权起始年（版权显示为「©起始年-当前年 署名」） |
+| `copyrightName` | `string` | 版权署名，同时作为站点名称的兜底值 |
+
+<Warning>
+云端模式下，后台「博客设置」保存到 D1 `site_settings` 的内容会**覆盖** `config.js` 里的对应项（见下节）。改完不生效时，请先检查后台设置，而不是只改配置文件。
+</Warning>
+
+## 云端设置对 config.js 的覆盖关系
+
+后台「博客设置」写入 D1 `site_settings`（键值对），前端 `getConfig()` 在运行时合并，优先级高于 `config.js`：
+
+| D1 键 | 覆盖的静态配置 | 说明 |
+|-------|----------------|------|
+| `site_info` | `footer.copyrightName`（取 `copyright`）、`footer.decl`（取 `footerText`）、站点名称/头像/简介 | 站点基础信息 |
+| `profile` | 关于页作者信息、页脚联系邮箱（`footer.email`） | 昵称 / 简介 / 头像 / 邮箱 |
+| `nav_menu` | 站点主导航 | 顶部导航菜单，支持子菜单 |
+| `footer_nav` | `footer.contact` | 底部导航；有云端配置时**优先**用云端 |
+| `friend_links` | `footer.links` | 友情链接；有云端配置时**优先**用云端 |
+| `moderate_comments` | 无（新增能力） | 值为 `'1'` 时新评论默认待审核；未设置保持「发表即公开」 |
 
 ## 广告配置 (ads)
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `enabled` | `boolean` | 总开关 |
-| `client` | `string` | AdSense 发布商 ID（`ca-pub-xxxx`）。`enabled` 且配置了 `client` 时，前端自动把官方库脚本 `adsbygoogle.js` 注入到 `<head>`（等价于在 `<head>` 中放置 AdSense 提供的脚本），无需手动改 HTML |
+| `enabled` | `boolean` | 总开关（默认 `false`，占位保护） |
+| `client` | `string` | AdSense 发布商 ID（`ca-pub-xxxx`）。`enabled` 且配置了 `client` 时，前端自动把官方库脚本 `adsbygoogle.js` 注入到 `<head>`，无需手动改 HTML |
 | `belowSearch` | `string` | 首页列表上方 HTML |
 | `between` | `string` | 列表间隔插入 HTML |
 | `betweenEvery` | `number` | 每 N 篇插入（默认 3） |
@@ -129,9 +161,22 @@ ads: {
 - `content` → 文章详情底部
 
 **注意事项**
-- `enabled` 必须为 `true` 广告才显示（默认 `false` 是占位保护，避免无效 slot 请求）。
+- `enabled` 必须为 `true` 且 `client` 非空，广告脚本才会加载。
 - 广告位代码里**只放** `<ins>` + `push({})`，**不要**再贴 `adsbygoogle.js` 库脚本 —— 它已由 `client` 字段自动注入 `<head>`。
 - 想只在文章底部放广告：把 `belowSearch` / `between` 留空、`content` 填代码即可；想调列表广告密度改 `betweenEvery`。
+
+## 主题与外观
+
+深色/浅色与强调色是两个正交维度，都存浏览器本地：
+
+| 维度 | localStorage 键 | 可选值 |
+|------|-----------------|--------|
+| 明暗主题 | `qingyu.theme` | `light` / `dark`（未设置时跟随系统） |
+| 强调色 | `qingyu.accent` | **4 种**：`terra`（赭橙，默认）/ `indigo`（黛蓝）/ `bamboo`（竹青）/ `dusk`（凝夜紫） |
+| 背景动画 | `qingyu.bgAnim` | `1` 开启 / `0` 关闭（桌面默认开启，触屏默认关闭） |
+| 界面语言 | `blog.locale` | `zh-CN` / `en` / `ja` / `ko` / `hi`，详见[国际化](/i18n) |
+
+`public/index.html` 会在首屏渲染前读取 `qingyu.theme` 与 `qingyu.accent` 写入 `data-theme` / `data-accent`，避免主题闪动。
 
 ## 路由
 
@@ -144,6 +189,7 @@ ads: {
 | `/about` | 关于 |
 | `/tags` | 标签云 |
 | `/guestbook` | 留言板（留言 / 优化方案双分区） |
-| `/posts/<别名>/` | 文章详情 |
+| `/posts/:别名/` | 文章详情 |
+| `/posts/:别名/edit` | 编辑指定文章（进入后台写作台） |
 | `/admin` | 管理后台（页脚导航显示为「后台」，仅管理员可见） |
-| `/write` | 写作台（/admin 的别名） |
+| `/write` | 写作台（`/admin` 的别名） |

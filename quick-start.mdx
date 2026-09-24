@@ -25,6 +25,10 @@ npx serve public
 
 > 静态模式数据存储在浏览器 localStorage 中，适合本地写作和临时预览。
 
+<Info>
+本地跑云端功能（`/api/*`）需要 `npx wrangler dev -c wrangler.workers.toml`，并先把配置里的 `{env.BLOG_KV_ID}` 等占位符替换成真实值。详见[本地开发](/local)。
+</Info>
+
 ## 云端模式（推荐）
 
 ### 前提条件
@@ -36,8 +40,8 @@ npx serve public
 
 ```bash
 npx wrangler login
-npx wrangler d1 create blog        # 记下 database_id
-npx wrangler kv namespace create BLOG  # 记下 id
+npx wrangler d1 create blog        # 记下 database_id（UUID，不是数据库名）
+npx wrangler kv namespace create BLOG  # 记下 id（32 位十六进制）
 ```
 
 ### 步骤二：配置 GitHub Secrets
@@ -49,20 +53,42 @@ npx wrangler kv namespace create BLOG  # 记下 id
 推送到 `main` 分支，GitHub Actions 自动：
 
 1. 校验 Secrets
-2. 执行 D1 迁移
-3. 部署 Worker
-4. 写入运行时 Secret
+2. 运行三套测试（失败即中止，不部署）
+3. 执行 D1 迁移（到 `0015`，带幂等保护）
+4. 部署 Worker
+5. 写入运行时 Secret（含 `CF_API_TOKEN`）
 
 ### 步骤四：首次设置密码
 
-访问 `https://www.2024921.xyz/admin` 设置密码。
+访问 `https://你的域名/admin` 设置密码（配置了 `BLOG_ADMIN_SETUP_KEY` 时需要携带安装密钥 `X-Setup-Key`）。
+
+## 本地测试
+
+三套测试只用 Node 内置模块，无网络与凭据依赖：
+
+```bash
+node smoke-test.js      # 冒烟测试 78 例
+node gb-verify.js       # 留言板专项验证 18 例
+node search-verify.js   # 搜索专项验证 13 例
+```
+
+CI 在每次部署前自动运行它们，失败即中止部署。
 
 ## 模式对比
 
 | 特性 | 静态模式 | 云端模式 |
 |------|----------|----------|
 | 运行环境 | 浏览器本地 | Cloudflare Workers |
-| 数据存储 | localStorage | D1 数据库 |
+| 数据存储 | localStorage | Cloudflare D1 |
 | 多人访问 | ❌ | ✅ |
-| 评论系统 | 本地存储 | 云端全局评论 |
-| 零成本 | ✅ | ✅ |
+| 评论系统 | 本地存储 | 云端全局评论 + 留言板 |
+| 后台写作 | ✅（导出 `posts.js` 发布） | ✅（直接发布） |
+| 音乐 / 媒体上传 | ❌ | ✅（浏览器直传 R2） |
+| 零成本 | ✅ | ✅（免费额度内） |
+
+## 更多资料
+
+- **本站文档**：<https://docs.2024921.xyz>
+- 主仓库总览：[README.md](https://github.com/kejiland/qingyu-blog/blob/main/README.md)
+- 新手教程：[CLOUDFLARE_SETUP_GUIDE.md](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)（各 Secret 从哪来、怎么填）
+- 深入阅读：[项目架构](/architecture) · [配置参考](/configuration) · [API 总览](/api-overview) · [部署到 Cloudflare Workers](/cloudflare-workers)

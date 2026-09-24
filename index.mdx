@@ -3,6 +3,28 @@ title: "Qingyu'Blog"
 description: "零框架 · 零构建 · 零依赖的个人博客"
 ---
 
-# Welcome
+# Qingyu'Blog 开发文档
 
-Hello World!
+零框架 · 零构建 · 零依赖的个人博客：纯原生 JavaScript + Cloudflare Workers / D1，双击 `public/index.html` 即可离线写作，部署后即为完整的云端博客。
+
+## 从这里开始
+
+- [快速开始](/quick-start) —— 30 秒跑起来，静态与云端两条路径
+- [项目架构](/architecture) —— 目录结构、双通道架构、前后端分层
+- [部署到 Cloudflare Workers](/cloudflare-workers) —— Secrets、迁移、缓存与安全头
+- [API 总览](/api-overview) —— 全部端点与鉴权方式
+- [更新日志](/changelog) —— 版本变更记录
+
+## 主要能力
+
+| 能力 | 说明 |
+|------|------|
+| 静态 + 云端双模式 | `mode: auto` 自动检测；无后端时退化为本地 localStorage |
+| Markdown 编辑器 | 实时预览、标签 / 封面 / 置顶，正文内置表情选择器 |
+| 评论与留言板 | D1 存储、嵌套回复、频控与去重、可选审核；`/guestbook` 双分区 |
+| 音乐播放器 | 全站悬浮播放器，音频浏览器直传 R2，按需加载 |
+| 5 语言界面 | 中文 / English / 日本語 / 한국어 / हिन्दी，自动识别浏览器语言 |
+| Workers AI | 文章摘要、写作助手、评论汇总与垃圾检测（可关闭） |
+| 可选 R2 直传 | 媒体库图片与音乐预签名直传，不经过 Worker |
+
+主仓库文档（中英双语）：[README.md](https://github.com/kejiland/qingyu-blog/blob/main/README.md)（中文）· [README_EN.md](https://github.com/kejiland/qingyu-blog/blob/main/README_EN.md)（English）· 新手教程 [CLOUDFLARE_SETUP_GUIDE.md](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)

@@ -5,27 +5,43 @@ description: "数据库迁移文件说明"
 
 ## 迁移文件列表
 
+`migrations/` 下的文件按文件名升序执行，当前编号已到 **0015**：
+
 | 文件 | 说明 |
 |------|------|
-| `0001_init.sql` | 基础表结构 |
-| `0002_site_files.sql` | 站点文件存储 |
-| `0003_cover_column.sql` | 封面图字段 |
-| `0004_post_meta.sql` | 发布状态 + 分类字段（产品端已移除分类功能，该列保留兼容） |
-| `0005_comment_status.sql` | 评论审核状态 |
-| `0006_media.sql` | 媒体资源表 |
-| `0007_settings.sql` | 站点设置表 |
-| `0008_stats_daily.sql` | 每日统计表 |
-| `0009_comment_status_index.sql` | 评论状态索引 |
-| `0010_admin_must_change.sql` | 强制改密标记 |
-| `0011_comment_reply.sql` | 评论回复 parent_id |
-| `0012_clear_orphaned_nav.sql` | 清理遗留 nav |
-| `0013_music.sql` | 音乐播放列表表（元数据；音频本体存 R2） |
+| `0001_init.sql` | 基础表结构：`posts`、`comments`（含 `idx_comments_post`）、`stats`、`admin_auth`、`admin_sessions`、`admin_fails` |
+| `0002_site_files.sql` | 站点产物存储表 `site_files`（feed.xml / sitemap.xml） |
+| `0003_cover_column.sql` | `ALTER TABLE posts ADD COLUMN cover`（封面图字段） |
+| `0004_post_meta.sql` | `ALTER TABLE posts ADD COLUMN category / status`（分类字段产品端已移除，列保留兼容） |
+| `0005_comment_status.sql` | `ALTER TABLE comments ADD COLUMN status`（评论审核状态） |
+| `0006_media.sql` | 媒体资源表 `media` + `idx_media_created` |
+| `0007_settings.sql` | 站点设置表 `site_settings` |
+| `0008_stats_daily.sql` | 每日统计表 `stats_daily` + `idx_stats_daily_date` |
+| `0009_comment_status_index.sql` | 评论状态索引 `idx_comments_status` |
+| `0010_admin_must_change.sql` | `ALTER TABLE admin_auth ADD COLUMN must_change`（首次默认密码强制改密标记） |
+| `0011_comment_reply.sql` | `ALTER TABLE comments ADD COLUMN parent_id` + `idx_comments_parent` |
+| `0012_clear_orphaned_nav.sql` | 清理遗留的 `site_settings.k = 'nav'` 脏数据（导航模块已并入其他设置） |
+| `0013_music.sql` | 音乐播放列表表 `music`（元数据；音频本体存 R2） |
+| `0014_purge_base64_media.sql` | 清理历史遗留的 base64 内嵌图片记录（`media.url LIKE 'data:image/%'`） |
+| `0015_hot_path_indexes.sql` | 补齐热点查询缺失索引（见下节 5 个索引） |
+
+### 0015 新增的 5 个索引
+
+| 索引 | 定义 | 服务的查询 |
+|------|------|------------|
+| `idx_comments_post_id` | `comments(post_id, id)` | 文章详情页取某篇评论、按 `id` 精确定位、去重检查 |
+| `idx_comments_status_date` | `comments(status, date)` | 后台评论列表「按状态过滤 + 按日期排序」 |
+| `idx_music_sort` | `music(sort, created_at)` | 音乐播放列表每次打开站点都按此排序（此前无任何索引） |
+| `idx_media_created_id` | `media(created_at, id)` | 媒体库按创建时间倒序、`id` 兜底稳定排序 |
+| `idx_admin_sessions_exp` | `admin_sessions(exp)` | 每次登录成功后清理过期会话 token |
+
+全部使用 `CREATE INDEX IF NOT EXISTS`，可安全重复执行。
 
 ## 执行方式
 
 ### 自动（推荐）
 
-GitHub Actions 部署时自动按序执行所有迁移。
+GitHub Actions 部署时自动按序执行所有迁移（在部署 Worker 之前）。
 
 ### 手动
 
@@ -33,25 +49,36 @@ GitHub Actions 部署时自动按序执行所有迁移。
 npx wrangler d1 execute blog --remote --file=migrations/0001_init.sql
 ```
 
+CI 中还会附加 `--config wrangler.workers.ci.toml`（由工作流生成的临时部署配置，含真实 D1 id）。
+
 ## 幂等性（三层策略）
 
-GitHub Actions 部署时按序执行所有迁移，采用**三层幂等策略**：
+SQLite 没有 `ADD COLUMN IF NOT EXISTS`，而 `0001_init.sql` 新建库就已包含后续 ALTER 加的所有列，因此重复执行必然报 `duplicate column`。`deploy.yml` 用三层策略保证「可反复部署」：
 
-1. **记账表 `schema_migrations`**：每次成功执行的迁移记录 `name`（主键）+ `applied_at`；下次部署先查记账表，已应用的直接跳过（覆盖 `0012_clear_orphaned_nav` 这类非重跑安全的删除类迁移）。
-2. **列预检**：ALTER 加列类迁移（`0003` cover、`0004` category、`0005` status、`0010` must_change、`0011` parent_id）执行前先用 `pragma_table_info` 查目标列是否已存在，存在则记账跳过——**注意 `0001_init.sql` 新建库已包含这些列**，老库也已加过，直接执行必然报 `duplicate column`（SQLite 没有 `ADD COLUMN IF NOT EXISTS`）。
-3. **兜底**：偶发执行失败时，若报错含 `duplicate column` / `already has a column` / `already exists` 等字样，按「已应用」记账跳过；其余错误完整打印并中断，避免半套 schema 上线。
+1. **记账表 `schema_migrations`**：每次成功执行（或判定为已应用）的迁移写入 `name`（主键）+ `applied_at`；下次部署先查记账表，已应用的直接跳过。这一层覆盖了 `0012`、`0014` 这类删除类、非重跑语义安全的迁移。
+2. **列预检**：ALTER 加列类迁移（`0003` cover、`0004` category、`0005` status、`0010` must_change、`0011` parent_id）在执行前先用 `pragma_table_info` 查目标列是否已存在，存在则记账跳过。
+3. **兜底**：偶发执行失败时，若报错含 `duplicate column` / `already has a column` / `already exists` 等字样，按「已应用」记账跳过；其余错误完整打印并中断部署，避免半套 schema 上线。
 
-<Info>
-`0001_init.sql` 是全量表结构（posts 含 cover/category/status 等全部字段）；0003/0004/0005 仅对早期存量库有意义。
-</Info>
+<Note>
+`schema_migrations` 表本身**由 CI 创建**（`CREATE TABLE IF NOT EXISTS`），不在 `migrations/` 目录里，因此不会出现在上面的文件列表中。结构见[表结构](/schema)。
+</Note>
+
+<Warning>
+`0001_init.sql` 是全量表结构（posts 含 cover / category / status 等全部字段）；`0003` / `0004` / `0005` / `0010` / `0011` 仅对早期存量库有意义。
+</Warning>
 
 ## 添加新迁移
 
-1. 在 `migrations/` 下创建新文件，编号递增
-2. 使用 `IF NOT EXISTS` 确保幂等（新建表）
-3. `ALTER TABLE` 加列需同步更新 deploy.yml 的列预检列表
+1. 在 `migrations/` 下创建新文件，编号递增（当前下一个编号是 `0016`）
+2. 新建表使用 `CREATE TABLE IF NOT EXISTS`、索引使用 `CREATE INDEX IF NOT EXISTS` 以确保幂等
+3. `ALTER TABLE ... ADD COLUMN` 无法幂等：需同步更新 `deploy.yml` 的列预检 `case` 分支（表名 + 列名）
+4. 删除类迁移（`DELETE`）天然幂等，可随每次部署重复执行，但仍会被记账表跳过
 
 ```bash
 # 命名规范
-0014_add_feature_x.sql
+0016_add_feature_x.sql
 ```
+
+<Info>
+从旧版 KV 存储升级到 D1 的完整流程见[KV 迁移到 D1](/kv-to-d1)。
+</Info>
