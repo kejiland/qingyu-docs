@@ -11,6 +11,7 @@ description: "后台 Feature switches 的覆盖范围与存储方式"
 |------|------|------|
 | `pageSize` | `5` | 首页每页文章数，`0` = 不分页 |
 | `ads` | `{}` | 广告总开关、AdSense Client ID 与列表上方 / 列表间隔 / 文章底部三个广告位 |
+| `navExtras` | `true` | 是否显示分类 / 历史 / 系列 / 热门等新增默认导航项；关闭不影响自定义链接 |
 | `errorReport` | `true` | 前端错误上报；关闭后浏览器不再上报错误日志 |
 | `commentGuard` | `true` | 评论蜜罐 + 时间戳反机器人；关闭后仍保留其它评论安全机制 |
 | `richContent` | `true` | Mermaid / KaTeX 按需加载；关闭后正文不再加载这两个库 |
@@ -28,6 +29,7 @@ GET /api/settings
   "features": {
     "pageSize": 8,
     "ads": { "enabled": false },
+    "navExtras": true,
     "errorReport": true,
     "commentGuard": true,
     "richContent": true
