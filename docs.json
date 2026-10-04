@@ -59,6 +59,18 @@
         ]
       },
       {
+        "group": "功能参考",
+        "pages": [
+          "feature-switches",
+          "seo",
+          "preview-links",
+          "static-export",
+          "webmention",
+          "authors",
+          "observability"
+        ]
+      },
+      {
         "group": "贡献",
         "pages": [
           "guide",
@@ -67,7 +79,9 @@
       },
       {
         "group": "更新日志",
-        "pages": ["changelog"]
+        "pages": [
+          "changelog"
+        ]
       }
     ]
   },

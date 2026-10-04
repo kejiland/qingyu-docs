@@ -45,6 +45,7 @@ graph TB
 | 传输 | `Authorization: Bearer <token>` |
 | 清理 | 登录成功时顺带清理**过期会话**与已老化的失败计数行 |
 | 改密 | 修改密码会清空**所有**会话，强制重新登录 |
+| 首次强制改密 | 自动生成默认密码或 `must_change=1` 时，改密前除改密 / 登出外的后台 API 一律 `403 PASSWORD_CHANGE_REQUIRED` |
 
 ## 登录限流
 
@@ -89,7 +90,7 @@ graph TB
 | WAF 限流规则 | `URI Path equals /api/admin/login`，10 秒内超过 10 次 → Block 10 秒 |
 | Workers 限流绑定 | 配置 GitHub Secret `BLOG_RATE_LIMIT_BINDING` 后重新部署（`env.LOGIN_LIMITER`，10 次/分钟/位置） |
 
-被边缘拦下的请求不进入 Worker，既不消耗 Worker 请求额度，也不碰 D1 / KV 配额。三种方案的逐步操作与取舍见 [Cloudflare Workers 部署](/cloudflare-workers)与 [CLOUDFLARE_SETUP_GUIDE.md 第 9 节](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)。
+被边缘拦下的请求不进入 Worker，既不消耗 Worker 请求额度，也不碰 D1 / KV 配额。三种方案的逐步操作与取舍见 [Cloudflare Workers 部署](/cloudflare-workers)与 [CLOUDFLARE_SETUP_GUIDE.md 第 9 节](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md)。
 
 ## 接口安全
 
@@ -106,6 +107,12 @@ graph TB
 | 写接口缓存 | 写操作与评论列表 `Cache-Control: no-store` |
 | 错误信息 | 未捕获异常统一返回「服务端内部错误」，SQL / 路径等内部细节只进服务端日志 |
 | 密码哈希失败 | `/api/admin/setup` 的 `deriveKey` / D1 写入失败会返回 500 并记录日志，不静默吞掉 |
+| 预览链接 | HMAC-SHA256 签名，密钥取 `BLOG_PREVIEW_SECRET`；未配置时由管理员密码哈希派生 + 过期时间；改密码即让旧链接全部失效，预览页 `noindex` / `no-store` / 不统计 / 不加载评论 |
+| 评论反机器人 | 隐藏蜜罐字段 + 表单时间戳；蜜罐被填写时静默丢弃，提交过快拒绝；可在功能开关关闭 |
+| 错误上报限流 | `/api/errors` 每 IP 每分钟最多 20 次，字段截断，按指纹聚合去重并限制最多 300 条 |
+| Webmention | 抓取来源页并校验其确实链接到本站文章后才收录（超时 / 大小 / HTML 类型限制） |
+| 访问统计隐私 | 只存 Cloudflare 边缘解析的两位国家码与 UA 推断的设备 / 系统 / 品牌，不落原始 IP |
+| 审计日志 | 关键后台操作写入 `audit_log`，记录动作、目标、来源 IP 与时间 |
 
 <Info>
 CSP 是**可落地的最小集合**而非最强配置：站点为零构建 + 大量内联脚本 / 样式 + 广告动态注入，无法做强 `script-src`，所以聚焦禁 object / plugin、禁点击劫持、禁 base 标签注入、限制表单提交目标。CSP 括号里的白名单也包含广告与 CDN 来源。
@@ -123,6 +130,9 @@ CSP 是**可落地的最小集合**而非最强配置：站点为零构建 + 大
 | 点赞去重 | 同 IP 同文章 30 天只计一次；频控 10 次/分钟 |
 | 浏览去重 | 同 IP 同文章 1 小时只计一次；频控 30 次/分钟 |
 | 审核开关 | `site_settings.moderate_comments`（`'1'` 时新评论进入待审核） |
+| 反机器人 | 隐藏蜜罐 + 表单时间戳（不足 2 秒拒绝）；`features.commentGuard=false` 可关闭 |
+| 敏感词 | `site_settings.comment_blocklist`，命中昵称或正文直接拒绝 |
+| 批量操作 | 后台批量通过 / 转待审 / 删除，服务端一次请求完成并写审计日志 |
 
 <Warning>
 上述限流与去重都依赖 **KV 绑定**。未绑定 KV 时它们会**静默失效**（服务端日志里会打印一条 warning），并且只有评论数上限 / 嵌套深度 / 重复拦截仍由 D1 保证。
@@ -130,10 +140,10 @@ CSP 是**可落地的最小集合**而非最强配置：站点为零构建 + 大
 
 ## 文章加密
 
-接口预留 `enc` / `protected` 字段（可导入外部加密文章），后台编辑器**暂未开放**端到端加密 UI。详见 [文章加密](/encryption)。
+后台编辑器已开放端到端加密 UI：AES-GCM-256 + PBKDF2-SHA256（10 万次迭代、16 字节随机盐）完全在浏览器完成，服务器只保存密文 `enc`，明文永不上传。编辑文章时可生成 HMAC 签名的草稿预览链接（默认 7 天、可设 1–30 天）；预览页 `noindex`、不统计、不加载评论。改站点密码会让已发出的预览链接立即失效。详见[文章加密](/encryption)与[预览链接](/preview-links)。
 
 ## 报告漏洞
 
 <Warning>
-请勿通过公开 Issue 报告安全漏洞。请通过 GitHub [@kejiland](https://github.com/kejiland) 私信联系维护者，完整策略见 [SECURITY.md](https://github.com/kejiland/qingyu-blog/blob/main/SECURITY.md)。
+请勿通过公开 Issue 报告安全漏洞。请通过 GitHub [@kejiland](https://github.com/kejiland) 私信联系维护者，完整策略见 [SECURITY.md](https://github.com/kejiland/qingyu-blog/blob/main/docs/SECURITY.md)。
 </Warning>

@@ -14,10 +14,16 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 | 留言板 | 复用评论接口（`:id` = `gb-note` / `gb-idea`） | 同评论 | 两个合成分区 ID，见[留言板](/guestbook) |
 | 统计 | `GET/POST /api/posts/:id/stats`、`GET /api/stats/trend?days=1~90` | 计数公开；趋势需会话 | 阅读 / 点赞 + 后台趋势聚合，见[统计](/stats) |
 | 媒体 | `POST /api/media/upload-url`、`GET/POST /api/media`、`DELETE /api/media/:id` | **全部需会话** | 图片 R2 预签名直传 + D1 元数据登记（仅 http/https），见[媒体](/media) |
-| 音乐 | `GET /api/music`（公开）、`POST /api/music/upload-url`、`POST /api/music`、`PUT/DELETE /api/music/:id` | 除列表外均需会话 | R2 预签名直传 + 播放列表，**仅 Workers 部署可用**，见[音乐](/music) |
-| 设置 | `GET/PUT /api/settings` | 读取公开、写入需会话 | 六个站点配置键，见[站点设置](/settings) |
-| AI | `GET /api/ai/ping`、`GET/POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 与摘要可匿名；其余需登录并绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；未绑定、未配置 D1 或开关关闭时返回 404 |
+| 音乐 | `GET /api/music`（公开）、`POST /api/music/upload-url`、`POST /api/music`、`PUT/DELETE /api/music/:id` | 除列表外均需会话 | R2 预签名直传 + 播放列表，**Workers / Pages 双形态可用**，见[音乐](/music) |
+| 设置 | `GET/PUT /api/settings` | 读取公开、写入需会话 | 站点配置键（含 `features` 功能开关），见[站点设置](/settings) |
+| AI | `GET /api/ai/ping`、`GET/POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 与摘要可匿名；其余需登录并绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；`BLOG_AI_ENABLED` 可整体关闭，`BLOG_AI_PUBLIC` 可禁止匿名摘要 |
 | 管理认证 | `/api/admin/setup`、`/api/admin/login`、`/api/admin/logout`、`/api/admin/password` | 见[管理后台](/admin) | 首次设密 / 登录 / 登出 / 改密（密码 ≥ 8 位，会话 7 天） |
+| 文章增强 | `GET /api/posts/:id/relations`、`GET /api/posts/:id/revisions`、`POST /api/posts/:id/revisions/:revision/restore` | 读取公开；恢复需会话 | 双向链接 / 相关文章 / 最多 50 个版本快照，见[文章](/posts) |
+| SEO / 预览 | `POST /api/admin/preview-link`、`GET /api/preview` | 生成需会话；预览凭 HMAC token | 草稿预览链接，见[预览链接](/preview-links) |
+| Webmention | `POST /api/webmention`、`GET /api/webmention`、`/api/admin/webmentions/*` | 接收公开；后台管理需会话 | 抓取来源页并校验链接后收录，见[Webmention](/webmention) |
+| 错误日志 | `POST /api/errors`、`GET/DELETE /api/admin/errors` | 上报公开；后台需会话 | 浏览器错误按指纹聚合，见[可观测性](/observability) |
+| 运维 | `GET /api/admin/health`、`GET/DELETE /api/admin/audit`、`/api/admin/backups/*` | 需会话 | 健康检查、审计日志、R2 备份与恢复，见[可观测性](/observability) |
+| 订阅分组 | `GET/PUT/DELETE /api/admin/subscribers/*`、`POST /api/admin/subscribers/broadcast` | 需会话 | 邮箱搜索 / 分组 / 群发，见[可观测性](/observability) |
 | 站点产物 | `GET/POST /api/site-files`、`GET /api/site-files/:name` | 写入需会话 | feed.xml / sitemap.xml / posts.js 的云端副本 |
 | Feed | `GET /feed.xml`、`GET /sitemap.xml`、`GET /api/feed.xml`、`GET /api/sitemap.xml` | 公开 | RSS 与站点地图，实时从 D1 生成，文章增删改后自动更新 |
 
@@ -30,12 +36,12 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 | 能力 | Workers 部署（`worker.js`） | Pages 部署（`functions/`） |
 |------|------|------|
 | 文章 / 评论 / 统计 / 媒体 / 设置 / 管理认证 / 站点产物 | ✅ | ✅ |
-| `/api/music*`（播放列表 / 上传 / 注册 / 编辑 / 删除） | ✅ | ❌ **无对应函数文件**，请求落到 JSON 404 兜底 |
+| `/api/music*`（播放列表 / 上传 / 注册 / 编辑 / 删除） | ✅ | ✅ **已补齐 Pages Functions** |
 | AI（`/api/ai/*`） | ✅ 需 `[ai] binding = "AI"`；未绑定则 404 | ⚠️ 函数文件存在，但 `wrangler.toml` 里没有 Workers AI 绑定，因此恒返回 `404`（前端自动隐藏 AI 入口） |
 | 未知 `/api/*` | JSON 404（`worker.js` 直接拦截） | JSON 404（`functions/api/[[path]].js` 兜底） |
 
 <Warning>
-`/api/music*` **只在 `worker.js` 里实现**，`functions/` 下没有 `music` 目录。因此在 Cloudflare **Pages** 部署下这些路由没有函数文件可命中，会被 `/api/*` 兜底返回 JSON 404 —— **音乐功能需要 Workers 部署**。
+**Workers AI 仍然是 Workers 专属绑定**：`wrangler.toml`（Pages）没有 `[ai]` 配置，因此 Pages 部署下 `/api/ai/*` 恒为 404；前端会自动隐藏 AI 入口。音乐、媒体等其余接口已在 Pages Functions 中补齐。
 </Warning>
 
 未知的 `/api/*` 路径一律返回 JSON 404，**绝不回退到 `index.html`**（避免调用方拿到 HTML 再 `.json()` 抛出难懂的解析错误）。Pages 侧的兜底响应带一段 `hint`：
@@ -68,11 +74,11 @@ Authorization: Bearer <token>
 |--------|------|
 | `400` | 参数缺失 / 非法 / 超限（如密码不足 8 位、图片格式不在白名单、文件超过 10MB） |
 | `401` | 未登录、会话过期，或密码错误（`/api/admin/login`、`/api/admin/password`） |
-| `403` | Origin 校验失败（跨站发表评论）；安装密钥 `X-Setup-Key` 不匹配 |
+| `403` | Origin 校验失败；安装密钥不匹配；首次改密未完成时返回 `PASSWORD_CHANGE_REQUIRED` |
 | `404` | 资源不存在；未知 `/api/*` 路径同样返回 JSON 404（绝不回退到 SPA 页面）；草稿对未登录调用方也返回 404 |
 | `405` | 方法不允许 |
 | `409` | 内容冲突：**评论 / 留言重复发送拦截**（同分区同昵称同内容）、文章 `id` 已存在、重置已有管理员密码 |
-| `429` | 频率限制：评论 5 条/分钟/IP、点赞 10 次/分钟/IP、浏览 30 次/分钟/IP、登录失败限流 |
+| `429` | 频率限制：评论 5 条/分钟/IP、点赞 10 次/分钟/IP、浏览 30 次/分钟/IP、错误上报 20 次/分钟/IP、AI 限额、登录失败限流 |
 | `500` | 未捕获异常（统一回「服务端内部错误」）；D1 未绑定（`数据库未配置：请创建并绑定名为 DB 的 D1 数据库`） |
 | `502` | 音乐删除时 R2 对象删除失败（D1 行保留，保证数据一致） |
 | `503` | 未配置 R2 凭据，上传接口不可用（读取与其余功能不受影响） |

@@ -16,7 +16,7 @@ graph LR
 ```
 
 - **入口**：`worker.js` 负责路由分发、SPA 回退、静态资源缓存头与安全响应头
-- **API 实现**：`functions/_lib/api-core.js`（文章 / 评论 / 统计 / 认证 / 设置 / RSS / Sitemap）、`functions/_lib/{media,music}.js`（R2 直传）与 `functions/api/ai/*.js`（Workers AI）
+- **API 实现**：`functions/_lib/api-core.js`（文章 / 评论 / 统计 / 认证 / 设置 / RSS / Sitemap / Webmention / 预览 / 错误日志）、`functions/_lib/{analytics,backup,subscribe,relations,search,popular,og,media,music}.js` 与 `functions/api/ai/*.js`（Workers AI）
 - **Pages 兜底**：`functions/api/[[path]].js` 让 Pages 侧未知 `/api/*` 也返回 JSON 404，绝不回退 HTML
 - **兼容性日期**：`2025-02-01`
 
@@ -69,15 +69,22 @@ KV 不是文章存储，而是限流与去重设施（评论 5 条/分钟、点�
 | `PAGES_PROJECT_NAME` | 可选 | **名字有误导性**：实际作用是覆盖 Worker 名称（`--name`）。不填则用 `wrangler.workers.toml` 里的 `kejiland` |
 | `BLOG_WRITE_TOKEN` | 可选 | 旧式静态写入令牌，新部署不需要 |
 | `BLOG_RATE_LIMIT_BINDING` | 可选 | 正整数（如 `1001`）：启用 Worker 内边缘登录限流，见下方「可选：边缘限流绑定」 |
+| `BLOG_AI_ENABLED` | 可选 | `0` / `false` / `off` 整体关闭 AI；不填 = 有绑定就开启 |
+| `BLOG_AI_PUBLIC` | 可选 | `0` / `false` / `off` 禁止匿名生成摘要 |
+| `BLOG_ADMIN_EMAIL` | 可选 | 新评论通知收件邮箱；不填回退到个人资料邮箱 |
+| `COMMENT_BLOCKLIST` | 可选 | 评论敏感词，换行或逗号分隔；优先于后台词库 |
+| `BLOG_PREVIEW_SECRET` | 可选 | 草稿预览链接签名密钥；不填由管理员密码哈希派生 |
+| `RESEND_API_KEY` / `BLOG_MAIL_FROM` / `BLOG_MAIL_REPLY_TO` | 可选 | Resend 邮件订阅与通知；`SITE_URL` 一起构成启用条件 |
 | `R2_ACCESS_KEY_ID` | 可选 | R2 S3 凭据（音乐与媒体**共用**这一对） |
 | `R2_SECRET_ACCESS_KEY` | 可选 | R2 S3 凭据 |
 | `R2_ENDPOINT` | 可选 | 形如 `https://<accountid>.r2.cloudflarestorage.com`，不带桶名、末尾不加 `/` |
-| `R2_BUCKET` | 可选 | **音乐桶**名（不能为空，否则整组 R2 配置不写入） |
+| `R2_BUCKET` | 可选 | **音乐桶**名；音乐桶配置需要它，单独配置媒体 / 备份桶时可不填 |
 | `R2_PUBLIC_BASE` | 可选 | 音乐桶公开域名，如 `https://music.example.com` |
 | `R2_MEDIA_BUCKET` | 可选 | **媒体桶**名，如 `qingyu-media` |
 | `R2_MEDIA_PUBLIC_BASE` | 可选 | 媒体桶公开域名，如 `https://media.example.com` |
+| `R2_BACKUP_BUCKET` | 可选 | **私有备份桶**名；保存自动 / 手动备份 JSON，不填则备份与恢复停用 |
 
-逐项的获取位置与格式说明见 [GitHub Secrets 配置](/github-secrets)，完整的新手教程见 [CLOUDFLARE_SETUP_GUIDE.md](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)。
+逐项的获取位置与格式说明见 [GitHub Secrets 配置](/github-secrets)，完整的新手教程见 [CLOUDFLARE_SETUP_GUIDE.md](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md)。
 
 ## 步骤三：部署
 
@@ -85,12 +92,12 @@ KV 不是文章存储，而是限流与去重设施（评论 5 条/分钟、点�
 
 1. ✅ Checkout + 安装 Node 24
 2. ✅ **安装 Wrangler**：默认 `wrangler@3.90.0`；若配置了 `BLOG_RATE_LIMIT_BINDING`，改为 `wrangler@^4.36.0`（该绑定要求 4.36+）
-3. ✅ 运行三套测试（`smoke-test.js` 78 例 / `gb-verify.js` 18 例 / `search-verify.js` 13 例，失败即中止不部署）
+3. ✅ 运行三套测试（`smoke-test.js` 158 例 / `gb-verify.js` 18 例 / `search-verify.js` 25 例，失败即中止不部署）
 4. ✅ 校验必要 Secrets 齐全（`BLOG_KV_ID` / `BLOG_D1_ID` / `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）
 5. ✅ 生成 `wrangler.workers.ci.toml`：先校验 ID 格式（`BLOG_KV_ID` 必须是 32 位十六进制、`BLOG_D1_ID` 必须是 UUID），再用脚本显式替换 `{env.BLOG_KV_ID}` 与 `{env.BLOG_D1_ID}`；`{env.SITE_URL}` / `{env.CF_ZONE_ID}` 缺失时替换为空串（安全降级，不留字面量占位符）
 6. ✅ 执行 D1 迁移（`migrations/*.sql` 按文件名升序，`schema_migrations` 记账表 + 列预检 + 报错兜底三层幂等，见[迁移脚本](/migrations)）
 7. ✅ 部署 Worker（`wrangler deploy --config wrangler.workers.ci.toml`）
-8. ✅ 写入运行时 Secret：`BLOG_ADMIN_SETUP_KEY`（配置了才写）、`BLOG_WRITE_TOKEN`（配置了才写）、`CF_API_TOKEN`（**自动写入**，值取 `CLOUDFLARE_API_TOKEN`，用于调 Cache Purge 接口）、R2 相关变量（凭据 / Endpoint / 桶名齐备才写）
+8. ✅ 写入运行时 Secret：`BLOG_ADMIN_SETUP_KEY`、`BLOG_WRITE_TOKEN`、`CF_API_TOKEN`、R2、Resend、`BLOG_ADMIN_EMAIL`、`COMMENT_BLOCKLIST`、`BLOG_PREVIEW_SECRET`、`BLOG_AI_ENABLED` / `BLOG_AI_PUBLIC`（所有可选值都是非空才写入）
 
 <Note>
 手动触发时工作流会额外跑一步 `wrangler whoami`，便于定位凭证问题。改完任何 Secret 都必须**重新运行一次部署**，GitHub Secret 的修改不会自动同步到已部署的 Worker。
@@ -216,7 +223,7 @@ AI 功能由 Cloudflare Workers AI 提供（默认模型 `@cf/meta/llama-3.2-3b-
 
 - 绑定点：`wrangler.workers.toml` 中的 `[ai] binding = "AI"`（部署时自动创建；不要在控制台手动重复绑定）
 - 关闭开关：环境变量 `BLOG_AI_ENABLED` 设为 `0` / `false` / `off` 可整体禁用；`BLOG_AI_PUBLIC` 设为同样值可**禁止匿名访客生成摘要**（登录后仍可用），防止被任意脚本刷走免费额度
-- 这两个变量**不由工作流写入**，需要你在 Worker 上手动设置：`npx wrangler secret put BLOG_AI_ENABLED --name kejiland`（`BLOG_AI_PUBLIC` 同理）
+- 这两个变量由部署工作流在非空时自动写入 Worker；也可以手动执行 `npx wrangler secret put BLOG_AI_ENABLED --name kejiland`（`BLOG_AI_PUBLIC` 同理）
 - **优雅降级**：未绑定 AI、未配置 D1 或开关关闭时，`/api/ai/*` 返回 404，前端 `aiProbe` 自动隐藏所有 AI 入口，博客其余功能零影响
 - 前端记忆：探测「可用」缓存 10 分钟、「不可用」仅 30 秒，AI 上线 / 修复后刷新页面即恢复
 
@@ -248,18 +255,30 @@ AI 功能由 Cloudflare Workers AI 提供（默认模型 `@cf/meta/llama-3.2-3b-
 - **格式白名单**：png / jpg / jpeg / webp / gif / svg / avif / bmp / ico，单文件 ≤ 10MB
 - **删除**：url 为本站 `/media/` 前缀且 origin 命中 `R2_MEDIA_PUBLIC_BASE` 时先删 R2 对象再删 D1 元数据
 - 环境变量：`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_MEDIA_BUCKET` / `R2_MEDIA_PUBLIC_BASE`
+- 私有备份桶：`R2_BACKUP_BUCKET`，保存自动 / 手动备份 JSON，不配置时备份与恢复停用
 
 ### 降级与配置细节
 
 - 未配置 R2 凭据时读取列表仍可用（D1），上传返回 `503`，其余功能不受影响
 - 音乐与图片**共用同一对凭据**，所以这对凭据必须同时有权限访问两个桶
-- 工作流只有在 `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`R2_ENDPOINT`、`R2_BUCKET` 四项都非空时才写入音乐桶配置；`R2_MEDIA_BUCKET` 同理需要这四项（换成 `R2_MEDIA_BUCKET`）齐备。**所以「只用图片」也要把 `R2_BUCKET` / `R2_PUBLIC_BASE` 填上**，否则整组 R2 配置都不会写入
+- 工作流按桶分组写入：`R2_BUCKET` 控制音乐桶，`R2_MEDIA_BUCKET` 控制媒体桶，`R2_BACKUP_BUCKET` 控制私有备份桶。三者都要求 `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` 存在；只配媒体桶时图片可用，不要求填写音乐桶
 
 > ⚠️ **自定义域优先级**：同主机名下，Worker 自定义域绑定会**覆盖** R2 自定义域。若 `music.example.com` 曾被绑定到某 Worker，需先在 Workers 控制台删除该绑定，R2 自定义域才能接管流量。
 
 <Warning>
-**R2 桶 CORS 是上传失败的头号原因**。浏览器直传要求 R2 允许你的站点跨域 `PUT`，配置至少包含：`AllowedOrigins` = 你的站点来源（`example.com` 与 `www.example.com` 都写）、`AllowedMethods` 含 `PUT`、`AllowedHeaders` 含 `Content-Type`。两个桶都要各配一遍。详见 [CLOUDFLARE_SETUP_GUIDE.md 第 6.3 节](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)。
+**R2 桶 CORS 是上传失败的头号原因**。浏览器直传要求 R2 允许你的站点跨域 `PUT`，配置至少包含：`AllowedOrigins` = 你的站点来源（`example.com` 与 `www.example.com` 都写）、`AllowedMethods` 含 `PUT`、`AllowedHeaders` 含 `Content-Type`。两个桶都要各配一遍。详见 [CLOUDFLARE_SETUP_GUIDE.md 第 6.3 节](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md)。
 </Warning>
+
+## 定时任务与备份
+
+`wrangler.workers.toml` 声明两条 Cron：
+
+| Cron | 频率 | 作用 |
+|------|------|------|
+| `*/5 * * * *` | 每 5 分钟 | 发布到期定时文章 + 处理邮件发件箱 |
+| `0 19 * * *` | 每天 19:00 UTC（北京时间 03:00） | 生成 R2 自动备份 |
+
+备份写入 `R2_BACKUP_BUCKET`，保留最近 30 份；后台「备份与恢复」支持下载、删除、恢复与恢复前安全快照。健康检查页会验证 D1 各表、KV、R2 媒体 / 备份桶、AI 与邮件绑定。
 
 ## 加固后台登录入口
 
@@ -271,10 +290,10 @@ AI 功能由 Cloudflare Workers AI 提供（默认模型 `@cf/meta/llama-3.2-3b-
 | **WAF 限流规则** | 域名 → Security → Security rules → Rate limiting rules；匹配 `URI Path equals /api/admin/login`，10 秒内超过 10 次 → Block 10 秒 | 拦在边缘，不消耗 Worker 请求额度，也不碰 D1 / KV 配额 |
 | **Workers 限流绑定** | 加 `BLOG_RATE_LIMIT_BINDING` 后重新部署（见上文「可选：边缘限流绑定」） | Worker 入口按 IP 限流 10 次/分钟/位置，被拦下的请求不查库不写库 |
 
-登录限流的详细阈值、冷却与应急通道见 [安全设计](/security-overview)，逐步操作见 [CLOUDFLARE_SETUP_GUIDE.md 第 9 节](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)。
+登录限流的详细阈值、冷却与应急通道见 [安全设计](/security-overview)，逐步操作见 [CLOUDFLARE_SETUP_GUIDE.md 第 9 节](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md)。
 
 ## 延伸阅读
 
-- [Cloudflare 配置完全指南（新手版）](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md) —— 从注册账号到 R2 CORS、绑定域名、首次初始化管理员，每一步都写了在控制台点哪里
-- [GitHub Secrets 与 R2 配置指南](https://github.com/kejiland/qingyu-blog/blob/main/DEPLOYMENT_SECRETS_GUIDE.md) —— 只聚焦 Secrets 与 R2 令牌：每个值从哪来、怎么填、两个桶用一个还是两个 Token
+- [Cloudflare 配置完全指南（新手版）](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md) —— 从注册账号到 R2 CORS、绑定域名、首次初始化管理员，每一步都写了在控制台点哪里
+- [GitHub Secrets 与 R2 配置指南](https://github.com/kejiland/qingyu-blog/blob/main/docs/DEPLOYMENT_SECRETS_GUIDE.md) —— 只聚焦 Secrets 与 R2 令牌：每个值从哪来、怎么填、两个桶用一个还是两个 Token
 - [安全设计](/security-overview) · [本地静态部署](/local) · [KV → D1 迁移](/kv-to-d1)

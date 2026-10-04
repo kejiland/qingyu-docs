@@ -109,8 +109,12 @@ Authorization: Bearer <token>
 | `tags` | `string[]` \| `string` | 数组，或用中英文逗号分隔的字符串 |
 | `pinned` / `protected` | `boolean` | 置顶 / 加密 |
 | `enc` | `object` | 加密载荷 `{salt, iv, data}`，由前端生成 |
-| `status` | `string` | `published`（默认）或 `draft` |
-| `category` | `string` | 兼容字段：分类功能已在 v2.2 移除，列与字段保留但后台编辑器不再提供 UI |
+| `status` | `string` | `published`（默认）/ `draft` / `scheduled` |
+| `publish_at` | `number` | 定时发布时间（UTC 毫秒），仅 `scheduled` 使用 |
+| `author` | `string` | 文章作者；为空时回退到站点署名 / 个人昵称 |
+| `seo` | `object` | 文章级 SEO：`{title, desc, canonical, noindex}`，空白字段自动回退 |
+| `og_image` | `string` | 自动分享图 URL |
+| `category` | `string` | 分类；编辑器可选择 / 新建议分类，前台首页支持筛选 |
 
 **响应（`201`）：**
 
@@ -159,3 +163,17 @@ Authorization: Bearer <token>
 | 每日聚合 | `stats_daily` 表该文章的历史趋势**尽力清理**（表缺失或清理失败不阻断删除） |
 
 文章不存在返回 `404`「未找到该内容」，成功返回 `{ "ok": true }`。
+
+
+## 文章增强接口
+
+| 接口 | 说明 |
+|------|------|
+| `GET /api/posts/:id/relations` | 双向链接、相关文章推荐 |
+| `GET /api/posts/:id/revisions` | 文章版本列表（最多 50 个快照） |
+| `GET /api/posts/:id/revisions/:revision` | 单个版本正文与元数据 |
+| `POST /api/posts/:id/revisions/:revision/restore` | 恢复指定版本（需会话） |
+| `POST /api/admin/preview-link` | 生成草稿预览 HMAC 链接（需会话） |
+| `GET /api/preview?token=...` | 预览未发布文章（凭 HMAC token） |
+
+文章级 SEO、作者页与草稿预览的完整行为见 [SEO](/seo)、[多作者](/authors) 与 [预览链接](/preview-links)。

@@ -54,7 +54,7 @@ npx wrangler kv namespace create BLOG  # 记下 id（32 位十六进制）
 
 1. 校验 Secrets
 2. 运行三套测试（失败即中止，不部署）
-3. 执行 D1 迁移（到 `0015`，带幂等保护）
+3. 执行 D1 迁移（到 `0032`，带幂等保护）
 4. 部署 Worker
 5. 写入运行时 Secret（含 `CF_API_TOKEN`）
 
@@ -67,9 +67,9 @@ npx wrangler kv namespace create BLOG  # 记下 id（32 位十六进制）
 三套测试只用 Node 内置模块，无网络与凭据依赖：
 
 ```bash
-node smoke-test.js      # 冒烟测试 78 例
+node smoke-test.js      # 冒烟测试 158 例
 node gb-verify.js       # 留言板专项验证 18 例
-node search-verify.js   # 搜索专项验证 13 例
+node search-verify.js   # 搜索专项验证 25 例
 ```
 
 CI 在每次部署前自动运行它们，失败即中止部署。
@@ -89,6 +89,7 @@ CI 在每次部署前自动运行它们，失败即中止部署。
 ## 更多资料
 
 - **本站文档**：<https://docs.2024921.xyz>
-- 主仓库总览：[README.md](https://github.com/kejiland/qingyu-blog/blob/main/README.md)
-- 新手教程：[CLOUDFLARE_SETUP_GUIDE.md](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)（各 Secret 从哪来、怎么填）
+- 主仓库总览：[README.md](https://github.com/kejiland/qingyu-blog/blob/main/docs/README.md)
+- 开发文档：[DEVELOPMENT.md](https://github.com/kejiland/qingyu-blog/blob/main/docs/DEVELOPMENT.md)
+- 新手教程：[CLOUDFLARE_SETUP_GUIDE.md](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md)（各 Secret 从哪来、怎么填）
 - 深入阅读：[项目架构](/architecture) · [配置参考](/configuration) · [API 总览](/api-overview) · [部署到 Cloudflare Workers](/cloudflare-workers)

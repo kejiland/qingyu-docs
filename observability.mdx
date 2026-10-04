@@ -1,0 +1,47 @@
+---
+title: "可观测性"
+description: "健康检查、审计日志、错误日志与来源统计"
+---
+
+后台把运行状态、操作记录、前端错误和访问来源集中到几个页面，方便排查问题。
+
+## 站点健康检查
+
+```http
+GET /api/admin/health
+Authorization: Bearer <session-token>
+```
+
+检查 D1 表可读性与行数、KV 读写、R2 媒体 / 备份桶、Workers AI 绑定和 Resend 邮件配置。缺失的绑定会明确显示为「未配置」，而不是让整页失败。
+
+## 操作审计日志
+
+关键后台操作写入 `audit_log`：
+
+- 创建 / 恢复 / 删除备份
+- 删除文章 / 媒体
+- 更新站点设置
+- 评论批量操作
+
+支持类型筛选、日期范围、分页与 CSV 导出；后台可清空日志。
+
+## 前端错误日志
+
+```http
+POST /api/errors
+GET  /api/admin/errors
+DELETE /api/admin/errors
+```
+
+前端未处理异常 / Promise 拒绝会匿名上报，服务端按 `fingerprint` 聚合，记录源码位置、页面、UA、次数与最近时间，最多保留 300 条。可在功能开关关闭上报。
+
+## 来源 / 国家 / 设备统计
+
+```http
+GET /api/admin/stats/sources
+Authorization: Bearer <session-token>
+```
+
+按天聚合来源域名、两位国家码、设备类型、系统与品牌；不保存原始 IP。仪表盘使用同一数据展示近 30 天 Top 榜与趋势。
+
+相关页面：[统计](/stats) · [功能开关](/feature-switches) · [安全设计](/security-overview)

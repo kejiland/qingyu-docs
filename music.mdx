@@ -6,7 +6,7 @@ description: "全站播放器与后台音乐管理（R2 直传）"
 前台右下角的**全站音乐播放器** + 后台「音乐管理」页（R2 直传、文件名识别、同步删除）。
 
 <Warning>
-`/api/music*` **只在 `worker.js` 里实现**，仓库 `functions/` 下没有 `music` 目录。因此在 Cloudflare **Pages** 部署下这些路径没有函数文件可命中，会被 `/api/*` 兜底返回 JSON 404 —— **音乐功能需要 Workers 部署**（`wrangler.workers.toml`）。
+`/api/music*` 已补齐 Pages Functions：播放列表、预签名上传、注册、编辑与删除在 Workers 和 Pages 两种部署形态下都可用。
 </Warning>
 
 ## 前台播放器
@@ -229,7 +229,7 @@ Authorization: Bearer <token>
 | `R2_MEDIA_PUBLIC_BASE` | 可选回退 | 媒体桶公开域名 |
 
 <Note>
-逐项获取方式（控制台路径、格式要求）见 [部署密钥指南](https://github.com/kejiland/qingyu-blog/blob/main/DEPLOYMENT_SECRETS_GUIDE.md)。
+逐项获取方式（控制台路径、格式要求）见 [部署密钥指南](https://github.com/kejiland/qingyu-blog/blob/main/docs/DEPLOYMENT_SECRETS_GUIDE.md)。
 </Note>
 
 ## 表结构

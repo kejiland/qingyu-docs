@@ -1,0 +1,37 @@
+---
+title: "文章 SEO"
+description: "文章级 SEO 覆盖与自动回退规则"
+---
+
+每篇文章可以覆盖以下 SEO 字段，留空则回退到文章标题、摘要与站点配置：
+
+| 字段 | 作用 |
+|------|------|
+| `title` | SEO 标题，用于 `<title>`、Open Graph、Twitter Card 与 JSON-LD |
+| `desc` | meta description / 分享描述 |
+| `canonical` | 规范化 URL |
+| `noindex` | 为真时输出 `noindex`，阻止搜索引擎收录 |
+
+## API 字段
+
+```json
+{
+  "id": "article-slug",
+  "title": "文章标题",
+  "seo": {
+    "title": "自定义 SEO 标题",
+    "desc": "自定义描述",
+    "canonical": "https://example.com/posts/article-slug/",
+    "noindex": false
+  }
+}
+```
+
+`seo` 随文章保存、备份与版本恢复一起保留。详情页渲染时：
+
+- `title` 为空 → 使用文章标题
+- `desc` 为空 → 使用文章摘要 / 正文摘要
+- `canonical` 为空 → 使用站点 `SITE_URL` + 当前文章路径
+- `noindex` 为真 → 输出 `<meta name="robots" content="noindex">`
+
+相关页面：[文章接口](/posts) · [配置参考](/configuration) · [静态站导出](/static-export)

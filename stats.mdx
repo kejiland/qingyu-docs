@@ -1,6 +1,6 @@
 ---
 title: "统计"
-description: "阅读和点赞统计接口，含去重、频控与每日聚合趋势"
+description: "阅读、点赞、趋势、来源、国家与设备统计"
 ---
 
 阅读与点赞都落在 D1 的两张表：累计计数 `stats`，每日聚合 `stats_daily`。接口本身**公开**（无需认证），但写入侧带服务端去重与频控。
@@ -157,3 +157,22 @@ KV 未绑定（`env.BLOG` 缺失）时，上表的去重与频控会**静默失�
 | `qingyu.viewed.<postId>` | `sessionStorage` | 本会话是否已计过阅读（防刷新重复 +1） |
 
 全部仅限本机，清缓存即丢失。详见[配置说明](/configuration)。
+
+
+## 来源与设备统计
+
+浏览请求会同时累计 `stats_sources`，用于仪表盘「来源 / 国家 / 设备」区域：
+
+| 维度 | 取值 | 说明 |
+|------|------|------|
+| 来源 | referrer 域名 | 按天聚合 |
+| 国家 / 地区 | Cloudflare 边缘解析的两位国家码 | 不记录原始 IP |
+| 设备类型 | desktop / mobile / tablet / bot | 由 User-Agent 推断 |
+| 系统 | iOS / Android / HarmonyOS / Windows / macOS / Linux | 由 User-Agent 推断 |
+| 品牌 | Apple / Samsung / Xiaomi / Huawei / OPPO / vivo 等 | 由 User-Agent 推断 |
+
+后台 `GET /api/admin/stats/sources` 返回近 30 天排行；仪表盘以国旗 + 占比展示，顶部 Top 榜与趋势图使用同一份数据。
+
+## 文章分析与导出
+
+后台「文章数据」页按文章聚合浏览量、点赞数、评论数与综合得分，支持全部 / 近 7 天 / 近 30 天范围、单篇趋势图与 CSV 导出；文章列表的统计不包含未发布文章的公开数据。

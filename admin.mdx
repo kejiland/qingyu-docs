@@ -188,5 +188,25 @@ Authorization: Bearer <token>
 <Note>
 客户端 IP 只取 Cloudflare 注入的 `CF-Connecting-IP`，不使用可被伪造的 `X-Forwarded-For`——否则攻击者构造该头即可绕过全部按 IP 的限流。
 
-想从源头再加一道门（Cloudflare Access / WAF 限流规则 / Workers 限流绑定三种方案），见 [Cloudflare 配置完全指南 · 第 9 节](https://github.com/kejiland/qingyu-blog/blob/main/CLOUDFLARE_SETUP_GUIDE.md)。
+想从源头再加一道门（Cloudflare Access / WAF 限流规则 / Workers 限流绑定三种方案），见 [Cloudflare 配置完全指南 · 第 9 节](https://github.com/kejiland/qingyu-blog/blob/main/docs/CLOUDFLARE_SETUP_GUIDE.md)。
 </Note>
+
+
+## 管理后台页面
+
+后台是懒加载的独立 SPA，主要页面如下：
+
+| 页面 | 能力 |
+|------|------|
+| 仪表盘 | 7 项统计卡片、近 30 天访问 / 评论趋势、来源 / 国家 / 设备 / 系统 / 品牌 Top 榜、存储与订阅概览 |
+| 文章管理 | 服务端搜索 / 状态筛选 / 分页、置顶、多选批量置顶或删除、版本历史、定时发布、作者 / 分类 / SEO / 加密 |
+| 文章数据 | 每篇浏览 / 点赞 / 评论 / 综合得分、范围切换、趋势图与 CSV 导出 |
+| 评论管理 | 服务端分页与最新 / 最热排序、审核、删除、点赞 / 精选 / 置顶、多选批量操作 |
+| 媒体与音乐 | R2 直传、搜索 / 分页、大图预览、批量删除、播放器试听；音乐 Pages / Workers 双形态可用 |
+| 订阅者 | 搜索 / 状态筛选 / 分页 / 筛选导出、分组与按组群发 |
+| 导入 / 导出 | 单篇 Markdown、批量 ZIP、JSON 完整备份、一键导出纯静态站 |
+| 备份与恢复 | R2 私有备份、内容摘要、下载 / 删除 / 恢复、恢复前安全快照 |
+| 站点健康 | D1 表行数、KV 读写、R2 媒体 / 备份桶、AI 与邮件绑定状态 |
+| 操作审计 | 类型 / 日期筛选、分页、CSV 导出、清空 |
+| 前端错误日志 | 指纹聚合、搜索、清空 |
+| 站点设置 | 站点信息、功能开关、个人资料、导航、底部导航、友情链接 |

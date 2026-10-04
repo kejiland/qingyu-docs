@@ -7,7 +7,7 @@ description: "了解 Qingyu'Blog 的整体架构设计"
 
 ```text
 ├── public/                          # 站点本体（部署目录，根目录直接服务其内容）
-│   ├── index.html                   # 页面入口（?v=2.7.2 版本化资源 + ARD/AI Catalog 发现链接）
+│   ├── index.html                   # 页面入口（?v=2.10.60 版本化资源 + ARD/AI Catalog 发现链接）
 │   ├── config.js / config.min.js    # 全站配置
 │   ├── style.css / style.min.css    # 前台样式
 │   ├── app.js / app.min.js          # 前台逻辑（真实路径路由 + 渲染）
@@ -27,19 +27,26 @@ description: "了解 Qingyu'Blog 的整体架构设计"
 │   └── fonts/dreamserif/            # 历史遗留 webfont 分片（当前版本不加载，可删）
 ├── functions/                       # Cloudflare Pages Functions
 │   ├── _lib/
-│   │   ├── api-core.js              # API 核心（D1 存储 / 鉴权 / 限流 / 缓存头 / 安全头）
+│   │   ├── api-core.js              # API 核心（文章 / 评论 / 统计 / 鉴权 / 限流 / 缓存 / Webmention / 预览）
 │   │   ├── ai.js                    # Workers AI 共享库（模型调用 / KV 限流 / 摘要缓存）
+│   │   ├── analytics.js             # 文章分析与统计导出
 │   │   ├── media.js                 # 媒体图片 R2 直传（预签名 / 删除 / 503 降级）
-│   │   └── music.js                 # 音乐 R2 直传（预签名 / 删除 / 桶选择）
+│   │   ├── music.js                 # 音乐 R2 直传（预签名 / 删除 / 桶选择）
+│   │   ├── backup.js                # R2 备份与恢复
+│   │   ├── subscribe.js             # 订阅、分组与邮件发件箱
+│   │   ├── relations.js             # 双向链接与相关文章
+│   │   ├── search.js / popular.js   # FTS5 搜索 / 热门排行
+│   │   └── og.js                    # OG 分享图签名上传
 │   ├── api/
 │   │   ├── [[path]].js              # /api/* 兜底：未知路径返回 JSON 404，绝不回退 HTML
-│   │   ├── posts.js / comments.js / media.js / settings.js
+│   │   ├── posts.js / comments.js / media.js / music.js / settings.js
+│   │   ├── subscribe.js / preview.js / webmention.js / errors.js
 │   │   ├── feed.xml.js / sitemap.xml.js
-│   │   ├── posts/ comments/ media/ stats/ site-files/ admin/ ai/
+│   │   ├── posts/ comments/ media/ music/ subscribe/ stats/ site-files/ admin/ ai/
 │   ├── feed.xml.js                  # 根路径 /feed.xml（云端动态 RSS）
 │   └── sitemap.xml.js               # 根路径 /sitemap.xml（云端动态 Sitemap）
 ├── worker.js                        # Cloudflare Workers 入口
-├── migrations/                      # D1 迁移 0001 ~ 0015
+├── migrations/                      # D1 迁移 0001 ~ 0032
 ├── scripts/
 │   ├── migrate-kv-to-d1.mjs         # KV → D1 迁移（可选）
 │   ├── minify.mjs                   # 生成 public/*.min.js / *.min.css
@@ -115,20 +122,20 @@ flowchart LR
 
 | 模块 | 功能 |
 |------|------|
-| 仪表盘 | 6 项统计卡片 + 30 天趋势图 |
+| 仪表盘 | 7 项统计卡片 + 近 30 天访问 / 评论趋势图 + 存储与订阅概览；统一骨架屏与质感趋势图 |
 | 文章管理 | 搜索/状态筛选/分页/置顶；删除无感刷新（行级淡出 + 静默校准） |
-| 编辑器 | Markdown 实时预览（输入框自动增高）+ 标签/封面/置顶 |
+| 编辑器 | Markdown 实时预览 + 标签 / 封面 / 置顶 / 分类 / 作者 / SEO / 文章加密；草稿自动保存与崩溃恢复 |
 | AI 写作助手 | 标题建议 / 润色 / 翻译（目标语言可选），结果可应用/复制 |
-| 评论管理 | 全局列表，审核/删除，回复链追踪；删除/审核无感刷新（行级操作，不整表重载） |
+| 评论管理 | 服务端分页、最新/最热排序、审核 / 删除 / 点赞 / 精选 / 置顶、多选批量通过 / 转待审 / 删除；敏感词与反机器人开关 |
 | AI 评论汇总 | 一键汇总近期评论要点（1 小时缓存）+ 单条垃圾检测 |
 | 标签管理 | 标签重命名/删除（批量更新相关文章） |
-| 媒体库 | 图片上传（浏览器 R2 直传 + 元数据登记，仅 http/https） |
-| 音乐管理 | 音频上传（R2 直传 + 进度）；文件名自动识别「歌曲名-歌手」；行内试听 / 删除（与 R2 同步）；列表卡片内滚动、表头吸顶 |
-| 站点设置 | 站点信息 / 个人资料 / 导航菜单 / 底部导航 / 友情链接 / 评论审核开关 |
+| 媒体库 | 图片上传（浏览器 R2 直传 + 元数据登记，仅 http/https）；搜索 / 分页 / 大图预览 / 批量删除 / 复制 Markdown |
+| 音乐管理 | 音频上传（R2 直传 + 进度）；文件名自动识别「歌曲名-歌手」；搜索 / 分页 / 行内试听 / 删除（与 R2 同步）；Workers / Pages 双形态可用 |
+| 站点设置 | 站点信息 / 功能开关 / 个人资料 / 导航菜单 / 底部导航 / 友情链接；错误上报、反机器人、Mermaid / KaTeX 均可开关 |
 | 品牌与顶栏 | 左上角 Logo 渐变方块（站点头像或首字 + 流动动画）+ 站名；右上角 🌐 语言弹层（同前台风格）；左下角个人头像（来自个人资料） |
 
 <Note>
-后台编辑器**没有**分类与发布状态 UI，也**没有**加密 UI：`posts.category` 列保留兼容（分类功能已于 v2.2 移除），`protected` / `enc` 字段保留供外部导入的加密文章使用。
+后台编辑器已提供分类、发布状态、作者、SEO 与文章加密 UI；预览分享链接、版本恢复、导入导出与静态站导出均在后台完成。
 </Note>
 
 ## 后端架构
@@ -150,7 +157,7 @@ flowchart LR
 
 ### Pages 侧兜底 (`functions/api/[[path]].js`)
 
-Pages 部署下 `public/_redirects` 末尾的 SPA 回退规则 `/* /index.html 200` 会把「没有对应函数文件」的 `/api/*` 路径兜成 HTML 200（例如 `/api/music/upload-url`，音乐上传只在 `worker.js` 实现）。catch-all 动态路由 `[[path]].js` 因此承担 Pages 侧兜底：
+Pages 部署下 `public/_redirects` 末尾的 SPA 回退规则 `/* /index.html 200` 会把「没有对应函数文件」的 `/api/*` 路径兜成 HTML 200。catch-all 动态路由 `[[path]].js` 因此承担 Pages 侧兜底：
 
 - 已知的具体路由（`KNOWN_ROUTES`，与 `functions/api/**` 一一对应）显式放行，不吞真实接口
 - 其余未知 `/api/*` 返回 JSON 404（带 `hint` 说明）

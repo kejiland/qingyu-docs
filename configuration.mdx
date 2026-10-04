@@ -111,6 +111,21 @@ window.BLOG_CONFIG = {
 | `footer_nav` | `footer.contact` | 底部导航；有云端配置时**优先**用云端 |
 | `friend_links` | `footer.links` | 友情链接；有云端配置时**优先**用云端 |
 | `moderate_comments` | 无（新增能力） | 值为 `'1'` 时新评论默认待审核；未设置保持「发表即公开」 |
+| `features` | `pageSize` / `ads` / `errorReport` / `commentGuard` / `richContent` | 后台「功能开关」；优先于 `config.js` 的 `pageSize` 与 `ads`，并可关闭错误上报、评论反机器人和 Mermaid / KaTeX |
+
+## 功能开关（features）
+
+后台「设置 → 功能开关」把原本只能改 `config.js` 或代码的开关搬到网页端，保存到 D1 `site_settings.features`：
+
+| 字段 | 默认 | 作用 |
+|------|------|------|
+| `pageSize` | `5` | 首页每页文章数，`0` = 不分页 |
+| `ads` | `{}` | 广告总开关、AdSense Client ID 与三个广告位 |
+| `errorReport` | `true` | 前端错误上报；`false` 时不再上报 |
+| `commentGuard` | `true` | 评论蜜罐 + 时间戳反机器人；`false` 时关闭 |
+| `richContent` | `true` | Mermaid / KaTeX 按需加载；`false` 时整体关闭 |
+
+这些值在运行时合并，优先级高于 `config.js`。相关接口见[站点设置](/settings)与[功能开关](/feature-switches)。
 
 ## 广告配置 (ads)
 
@@ -188,6 +203,14 @@ ads: {
 | `/archive` | 归档 |
 | `/about` | 关于 |
 | `/tags` | 标签云 |
+| `/categories` | 分类页 |
+| `/series` · `/series/:name` | 系列 / 专栏 |
+| `/popular` | 热门文章 |
+| `/authors` · `/authors/:name` | 多作者与作者主页 |
+| `/history` | 阅读历史 / 稍后读 |
+| `/links` | 友情链接 |
+| `/subscribe` | 邮件订阅 |
+| `/preview/:token` | 草稿预览 |
 | `/guestbook` | 留言板（留言 / 优化方案双分区） |
 | `/posts/:别名/` | 文章详情 |
 | `/posts/:别名/edit` | 编辑指定文章（进入后台写作台） |

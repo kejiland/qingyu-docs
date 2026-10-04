@@ -25,7 +25,7 @@ git clone https://github.com/kejiland/qingyu-blog.git
 cd qingyu-blog
 ```
 
-双击 `public/index.html` 即可开始，无需安装依赖。涉及云端接口时改用：
+双击 `public/index.html` 即可开始，无需安装依赖。架构、API 地图、D1 模型与发版流程见[开发文档](https://github.com/kejiland/qingyu-blog/blob/main/docs/DEVELOPMENT.md)。涉及云端接口时改用：
 
 ```bash
 npx wrangler dev -c wrangler.workers.toml   # 需先把 {env.BLOG_KV_ID} 等占位符换成真实 id
@@ -34,9 +34,9 @@ npx wrangler dev -c wrangler.workers.toml   # 需先把 {env.BLOG_KV_ID} 等占�
 ### 提交前自测
 
 ```bash
-node smoke-test.js      # 冒烟测试 78 例
+node smoke-test.js      # 冒烟测试 158 例
 node gb-verify.js       # 留言板专项验证 18 例
-node search-verify.js   # 搜索专项验证 13 例
+node search-verify.js   # 搜索专项验证 25 例
 ```
 
 三套测试为零依赖纯 Node 脚本；CI 部署前会跑一遍，失败即中止部署。
@@ -59,6 +59,16 @@ node scripts/screenshots/capture.mjs --only home,admin
 ```
 
 它由 `scripts/screenshots/` 三个文件组成：`demo-content.mjs`（示例文章 / 评论 / 音乐数据）、`demo-server.mjs`（本地 mock API 服务器）、`capture.mjs`（无头 Chrome 驱动）。前置条件是本机安装 Chrome 或 Edge，并可选安装 `puppeteer-core`（开发依赖，站点运行时不需要）。
+
+### 版本与资源版本号
+
+修改前端 JS / CSS 后运行 `node scripts/minify.mjs`，并同步更新：
+
+- `public/app.js` 的 `BLOG_VERSION`
+- `public/index.html` 的全部 `?v=`
+- `public/sw.js` 的 `CACHE_VERSION`
+
+新增 / 修改 `public/locales/*.json` 后还要递增 `public/i18n.js` 的 `I18N_VER`。
 
 ### PR 流程
 
@@ -96,10 +106,10 @@ Closes #42
 
 | 文档类型 | 约定 | 例子 |
 |----------|------|------|
-| 长文档 | 成对文件 `X.md` + `X_EN.md`，两个文件首行互相链接做语言切换 | `README.md` / `README_EN.md`、`CLOUDFLARE_SETUP_GUIDE.md` / `CLOUDFLARE_SETUP_GUIDE_EN.md`、`SECURITY.md` / `SECURITY_EN.md` |
+| 长文档 | 成对文件 `X.md` + `X_EN.md`，两个文件首行互相链接做语言切换 | `docs/README.md` / `docs/README_EN.md`、`docs/DEVELOPMENT.md` / `docs/DEVELOPMENT_EN.md`、`docs/SECURITY.md` / `docs/SECURITY_EN.md` |
 | 短文档 | 单个文件内中英对照 | `CONTRIBUTING.md`、Issue / PR 模板 |
 
-新增或修改文档时请同时更新两个文件（或同一文件的两段），并把新文档补进 `README.md` 的「文档索引」表。
+新增或修改文档时请同时更新两个文件（或同一文件的两段），并把新文档补进 `docs/README.md` 的「文档索引」表。
 
 <Note>
 本站（`docs.2024921.xyz`）是**中文单语**文档站；英文内容请写进主仓库的 `*_EN.md`，不要在本站新增英文页面。

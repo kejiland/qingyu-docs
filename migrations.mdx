@@ -5,14 +5,14 @@ description: "数据库迁移文件说明"
 
 ## 迁移文件列表
 
-`migrations/` 下的文件按文件名升序执行，当前编号已到 **0015**：
+`migrations/` 下的文件按文件名升序执行，当前编号已到 **0032**：
 
 | 文件 | 说明 |
 |------|------|
 | `0001_init.sql` | 基础表结构：`posts`、`comments`（含 `idx_comments_post`）、`stats`、`admin_auth`、`admin_sessions`、`admin_fails` |
 | `0002_site_files.sql` | 站点产物存储表 `site_files`（feed.xml / sitemap.xml） |
 | `0003_cover_column.sql` | `ALTER TABLE posts ADD COLUMN cover`（封面图字段） |
-| `0004_post_meta.sql` | `ALTER TABLE posts ADD COLUMN category / status`（分类字段产品端已移除，列保留兼容） |
+| `0004_post_meta.sql` | `ALTER TABLE posts ADD COLUMN category / status`（分类功能已在 v2.10.60 恢复，列与编辑 UI 均可用） |
 | `0005_comment_status.sql` | `ALTER TABLE comments ADD COLUMN status`（评论审核状态） |
 | `0006_media.sql` | 媒体资源表 `media` + `idx_media_created` |
 | `0007_settings.sql` | 站点设置表 `site_settings` |
@@ -24,6 +24,23 @@ description: "数据库迁移文件说明"
 | `0013_music.sql` | 音乐播放列表表 `music`（元数据；音频本体存 R2） |
 | `0014_purge_base64_media.sql` | 清理历史遗留的 base64 内嵌图片记录（`media.url LIKE 'data:image/%'`） |
 | `0015_hot_path_indexes.sql` | 补齐热点查询缺失索引（见下节 5 个索引） |
+| `0016_scheduled_publishing.sql` | 定时发布：`posts.publish_at`（UTC 毫秒时间戳） |
+| `0017_post_revisions.sql` | 文章版本历史表 `post_revisions` |
+| `0018_backups.sql` | R2 备份元数据表 `backups`，备份本体存私有 R2 桶 |
+| `0019_post_series.sql` | 文章系列：`series` / `series_order` |
+| `0020_subscribers.sql` | 邮件订阅者 `subscribers` 与发件箱 `mail_outbox` |
+| `0021_post_og_image.sql` | 自动分享图：`posts.og_image` |
+| `0022_media_thumb.sql` | 媒体缩略图：`media.thumb_url` |
+| `0023_post_fts.sql` | FTS5 trigram 全文索引 `posts_fts` |
+| `0024_comment_notifications.sql` | 发件箱区分文章通知 / 站长评论通知 |
+| `0025_comment_interactions.sql` | 评论点赞 / 精选 / 置顶字段 |
+| `0026_audit_log.sql` | 后台操作审计表 `audit_log` |
+| `0027_stats_sources.sql` | 来源 / 设备 / 国家按天聚合表 `stats_sources` |
+| `0028_subscriber_groups.sql` | 订阅者分组 JSON 字段 |
+| `0029_error_logs.sql` | 前端错误日志表 `error_logs` |
+| `0030_post_seo.sql` | 文章级 SEO JSON：`posts.seo` |
+| `0031_webmentions.sql` | Webmention 引用表 `webmentions` |
+| `0032_post_author.sql` | 文章作者字段 `posts.author` |
 
 ### 0015 新增的 5 个索引
 
@@ -36,6 +53,17 @@ description: "数据库迁移文件说明"
 | `idx_admin_sessions_exp` | `admin_sessions(exp)` | 每次登录成功后清理过期会话 token |
 
 全部使用 `CREATE INDEX IF NOT EXISTS`，可安全重复执行。
+
+### 0016 ~ 0032 新增能力
+
+| 迁移区间 | 新增能力 |
+|----------|----------|
+| `0016` ~ `0019` | 定时发布、文章修订、R2 备份、系列 / 专栏 |
+| `0020` ~ `0022` | 邮件订阅与发件箱、OG 分享图、媒体缩略图 |
+| `0023` ~ `0026` | FTS5 全文搜索、评论通知、评论互动、审计日志 |
+| `0027` ~ `0032` | 来源统计、订阅分组、错误日志、文章 SEO、Webmention、多作者 |
+
+新增迁移仍遵循「连续编号 + 幂等优先」；截至 v2.10.60 下一个编号为 `0033`。
 
 ## 执行方式
 
@@ -69,7 +97,7 @@ SQLite 没有 `ADD COLUMN IF NOT EXISTS`，而 `0001_init.sql` 新建库就已�
 
 ## 添加新迁移
 
-1. 在 `migrations/` 下创建新文件，编号递增（当前下一个编号是 `0016`）
+1. 在 `migrations/` 下创建新文件，编号递增（当前下一个编号是 `0033`）
 2. 新建表使用 `CREATE TABLE IF NOT EXISTS`、索引使用 `CREATE INDEX IF NOT EXISTS` 以确保幂等
 3. `ALTER TABLE ... ADD COLUMN` 无法幂等：需同步更新 `deploy.yml` 的列预检 `case` 分支（表名 + 列名）
 4. 删除类迁移（`DELETE`）天然幂等，可随每次部署重复执行，但仍会被记账表跳过

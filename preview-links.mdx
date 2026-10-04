@@ -1,0 +1,34 @@
+---
+title: "草稿预览链接"
+description: "HMAC 签名的未发布文章预览"
+---
+
+后台编辑器可以为草稿生成预览链接：不需要登录即可阅读，但链接本身经过签名并带有效期。
+
+## 生成与访问
+
+```http
+POST /api/admin/preview-link
+Authorization: Bearer <session-token>
+```
+
+请求体：
+
+```json
+{ "id": "draft-post-id", "days": 7 }
+```
+
+`days` 可设置 1–30 天，默认 7 天。响应返回可直接复制 / 打开的链接；用户访问 `/preview/:token`，前端再调用 `GET /api/preview?token=...` 获取正文。
+
+## 签名与失效
+
+| 项目 | 说明 |
+|------|------|
+| 算法 | HMAC-SHA256 + 过期时间 |
+| 密钥 | `BLOG_PREVIEW_SECRET`；不配置时由管理员密码哈希派生 |
+| 失效 | 修改站点密码会立即让所有已发出的预览链接失效 |
+| 页面 | `noindex`、不统计、不加载评论、响应 `no-store` |
+
+预览链接只适用于草稿 / 未发布文章，不能绕过文章加密；两者可以同时使用。
+
+相关页面：[文章加密](/encryption) · [文章接口](/posts) · [安全设计](/security-overview)

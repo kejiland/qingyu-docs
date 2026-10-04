@@ -3,7 +3,7 @@ title: "表结构"
 description: "D1 数据库完整表结构"
 ---
 
-数据库为 Cloudflare D1（SQLite），全部表由 `migrations/` 下的迁移文件创建。下表是当前（迁移编号至 `0015`）的完整结构。
+数据库为 Cloudflare D1（SQLite），全部表由 `migrations/` 下的迁移文件创建。下表是当前（迁移编号至 `0032`）的核心结构与新增表摘要。
 
 ## posts（文章）
 
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS posts (
   protected   INTEGER DEFAULT 0,      -- 加密标记
   enc         TEXT,                   -- 加密数据 JSON，明文文章为 NULL
   tags        TEXT,                   -- 标签 JSON 数组字符串
-  category    TEXT DEFAULT '',        -- 分类（产品端已移除分类功能，该列保留兼容）
+  category    TEXT DEFAULT '',        -- 分类（v2.10.60 已恢复分类页、筛选与编辑器 UI）
   status      TEXT DEFAULT 'published', -- published / draft
   created_at  TEXT DEFAULT '',
   updated_at  TEXT DEFAULT ''
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
 );
 ```
 
-当前使用六个键：`site_info`、`profile`、`nav_menu`、`footer_nav`、`friend_links`、`moderate_comments`。这些键会覆盖 `config.js` 中的对应项，详见[配置参考](/configuration)与[站点设置](/settings)。
+当前使用的键包括：`site_info`、`profile`、`nav_menu`、`footer_nav`、`friend_links`、`moderate_comments`、`features`、`comment_blocklist`。其中 `features` 是后台「功能开关」与广告配置的 JSON，详见[配置参考](/configuration)与[站点设置](/settings)。
 
 ## site_files（站点产物）
 
@@ -186,11 +186,29 @@ CREATE TABLE IF NOT EXISTS site_files (
 );
 ```
 
+## 新增表（0016 ~ 0032）
+
+以下表格由后续迁移加入，完整 DDL 见仓库 `migrations/`：
+
+| 表 | 主要字段 | 说明 |
+|----|----------|------|
+| `post_revisions` | id, post_id, title, content, tags, status, reason, created_at | 文章版本历史，每篇最多保留 50 个快照 |
+| `backups` | id, object_key, size, reason, created_at, counts | R2 私有备份元数据 |
+| `subscribers` | id, email, status, token, locale, groups, confirmed_at | 邮箱订阅与分组 |
+| `mail_outbox` | id, post_id, to_email, status, kind, payload, sent_at | 新文章 / 评论通知 / 群发发件箱 |
+| `audit_log` | id, action, target, detail, ip, created_at | 后台关键操作审计 |
+| `stats_sources` | post_id, date, kind, name, views | 来源 / 国家 / 设备 / 系统 / 品牌按天聚合 |
+| `error_logs` | fingerprint, kind, message, source, stack, url, ua, hits, last_at | 前端错误按指纹聚合 |
+| `webmentions` | id, source, target, post_id, author_name, title, excerpt, status, created_at | Webmention 外站引用 |
+| `posts_fts` | id, title, excerpt, content, tags | D1 FTS5 trigram 全文索引，自动同步 `posts` |
+
+`posts` 还新增了 `og_image`、`series`、`series_order`、`publish_at`、`seo`、`author` 等字段；`comments` 新增 `likes`、`featured`、`pinned`；`media` 新增 `thumb_url`。
+
 ## schema_migrations（迁移记账表）
 
 ```sql
 CREATE TABLE IF NOT EXISTS schema_migrations (
-  name       TEXT PRIMARY KEY,                          -- 迁移文件名，如 0015_hot_path_indexes.sql
+  name       TEXT PRIMARY KEY,                          -- 迁移文件名，如 0032_post_author.sql
   applied_at TEXT DEFAULT (datetime('now'))
 );
 ```

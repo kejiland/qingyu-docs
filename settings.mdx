@@ -1,9 +1,9 @@
 ---
 title: "站点设置"
-description: "站点配置的六个键与读写接口"
+description: "站点配置键与读写接口（含功能开关与评论词库）"
 ---
 
-后台「博客设置」页的所有内容都持久化到 D1 的 `site_settings` 表，通过 `/api/settings` 读写。这不是任意键值存储——**业务上只有六个键**：
+后台「博客设置」页的所有内容都持久化到 D1 的 `site_settings` 表，通过 `/api/settings` 读写。这不是任意键值存储——业务上使用固定键，常用键如下：
 
 | Key | 值（JSON 字符串） | 说明 |
 |-----|------|------|
@@ -13,6 +13,12 @@ description: "站点配置的六个键与读写接口"
 | `footer_nav` | `[{text, url}]` | 底部导航链接数组 |
 | `friend_links` | `[{text, url}]` | 友情链接数组 |
 | `moderate_comments` | `"1"` / `"0"` | 评论审核开关（**只有严格等于 `"1"` 才开启**） |
+| `features` | JSON 对象 | 首页分页、广告、错误上报、评论反机器人、Mermaid / KaTeX 开关 |
+| `comment_blocklist` | JSON 数组或换行/逗号分隔字符串 | 评论敏感词词库，命中即拒绝 |
+
+<Info>
+`features` 由后台「功能开关」维护，包含 `pageSize`、`ads`、`errorReport`、`commentGuard`、`richContent`；`comment_blocklist` 也可由环境变量 `COMMENT_BLOCKLIST` 覆盖。
+</Info>
 
 ## 获取设置
 
