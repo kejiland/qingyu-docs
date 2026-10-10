@@ -168,6 +168,29 @@ Authorization: Bearer <token>
 | 当前密码不正确 | `401` | `当前密码不正确` |
 | 缺少 / 无效会话 token | `401` | `未授权：请先登录获取会话 token，并在请求头携带 Authorization: Bearer <token>` |
 
+## 会话自检
+
+```http
+GET /api/admin/session
+Authorization: Bearer <token>
+```
+
+<Info>
+**v2.10.100 新增。** 供前端在渲染「仅管理员可见」的界面元素前确认身份——目前用于 **AI 摘要的「重新生成」按钮**：游客页面里即使还残留着过期的本地 token，服务端确认不是管理员后按钮也不会渲染。
+</Info>
+
+**响应：**
+
+```json
+{ "ok": true, "authed": true }
+```
+
+- 有效 token → `authed: true`；缺失或过期 → `authed: false`（**仍返回 200**，便于前端直接判断而不必处理异常分支）
+
+<Warning>
+**自检不是鉴权。** 它只是给前端的身份提示，真正的写操作仍由各自接口独立校验 token；不要因为它返回 `true` 就放行任何写请求。
+</Warning>
+
 ## 认证方式
 
 所有需要认证的接口在请求头中携带 Token：

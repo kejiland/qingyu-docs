@@ -13,11 +13,36 @@ description: "站点配置键与读写接口（含功能开关与评论词库）
 | `footer_nav` | `[{text, url}]` | 底部导航链接数组 |
 | `friend_links` | `[{text, url}]` | 友情链接数组 |
 | `moderate_comments` | `"1"` / `"0"` | 评论审核开关（**只有严格等于 `"1"` 才开启**） |
-| `features` | JSON 对象 | 首页分页、广告、错误上报、评论反机器人、Mermaid / KaTeX 开关 |
+| `features` | JSON 对象 | 首页分页与首页标签显示、广告、导航附加项、阅读字号、划线高亮、收藏、错误上报、评论反机器人、Mermaid / KaTeX 开关 |
 | `comment_blocklist` | JSON 数组或换行/逗号分隔字符串 | 评论敏感词词库，命中即拒绝 |
 
 <Info>
-`features` 由后台「功能开关」维护，包含 `pageSize`、`ads`、`errorReport`、`commentGuard`、`richContent`；`comment_blocklist` 也可由环境变量 `COMMENT_BLOCKLIST` 覆盖。
+`features` 由后台「功能开关」维护，包含 `pageSize`、`homeTags`、`ads`、`navExtras`、`readingFont`、`highlight`、`bookmark`、`errorReport`、`commentGuard`、`richContent`；`comment_blocklist` 也可由环境变量 `COMMENT_BLOCKLIST` 覆盖。
+</Info>
+
+## 功能开关（`features`）
+
+后台 →「博客设置」→「功能开关」标签页，把原先只能改代码的开关搬到了界面上，存于 `site_settings.features`，**保存即生效，无需改代码或重新部署**：
+
+| 字段 | 作用 |
+|------|------|
+| `pageSize` | 首页每页文章数（**0 = 不分页**）；非数字或负数回退为 `8` |
+| `homeTags` | **首页显示哪些标签**——标签多了容易堆积，可在此自选保留哪些 |
+| `navExtras` | 是否显示新增导航项（分类 / 历史 / 系列 / 热门）；关闭只隐藏入口，二级菜单仍可打开 |
+| `ads` | 广告总开关 + AdSense 发布商 ID + 三个广告位（列表上方 / 列表项之间及间隔 / 正文下方）+ 间隔条数 |
+| `readingFont` | **阅读字号**：是否显示正文的 A− / A / A+ 调节按钮 |
+| `highlight` | **划线高亮工具**（涵盖高亮汇总 / 清除高亮 / 导出高亮 / 导入高亮） |
+| `bookmark` | **收藏（稍后读）按钮** |
+| `richContent` | 正文渲染：Mermaid 图表与 KaTeX 数学公式 |
+| `errorReport` | 前端错误上报（匿名上报到 `/admin/errors`，按指纹分组） |
+| `commentGuard` | 评论反机器人 |
+
+<Note>
+关闭开关**只隐藏界面**，**已保存的高亮与收藏记录不会被删除**。
+</Note>
+
+<Info>
+**v2.10.91**：博客设置会**记住你上次停留的标签页**，刷新不再跳回「站点基础信息」。
 </Info>
 
 ## 获取设置

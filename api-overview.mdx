@@ -17,7 +17,7 @@ description: "全部 REST 接口的分组、鉴权与错误码约定"
 | 音乐 | `GET /api/music`（公开）、`POST /api/music/upload-url`、`POST /api/music`、`PUT/DELETE /api/music/:id` | 除列表外均需会话 | R2 预签名直传 + 播放列表，**Workers / Pages 双形态可用**，见[音乐](/music) |
 | 设置 | `GET/PUT /api/settings` | 读取公开、写入需会话 | 站点配置键（含 `features` 功能开关），见[站点设置](/settings) |
 | AI | `GET /api/ai/ping`、`GET/POST /api/ai/summary`、`POST /api/ai/assist`、`POST /api/ai/comments` | ping 与摘要可匿名；其余需登录并绑定 Workers AI | 文章摘要 / 写作助手 / 评论汇总与垃圾检测；`BLOG_AI_ENABLED` 可整体关闭，`BLOG_AI_PUBLIC` 可禁止匿名摘要 |
-| 管理认证 | `/api/admin/setup`、`/api/admin/login`、`/api/admin/logout`、`/api/admin/password` | 见[管理后台](/admin) | 首次设密 / 登录 / 登出 / 改密（密码 ≥ 8 位，会话 7 天） |
+| 管理认证 | `/api/admin/setup`、`/api/admin/login`、`/api/admin/logout`、`/api/admin/password`、`GET /api/admin/session` | 见[管理后台](/admin) | 首次设密 / 登录 / 登出 / 改密（密码 ≥ 8 位，会话 7 天）；`GET /api/admin/session` 为**会话自检**（v2.10.100 新增） |
 | 文章增强 | `GET /api/posts/:id/relations`、`GET /api/posts/:id/revisions`、`POST /api/posts/:id/revisions/:revision/restore` | 读取公开；恢复需会话 | 双向链接 / 相关文章 / 最多 50 个版本快照，见[文章](/posts) |
 | SEO / 预览 | `POST /api/admin/preview-link`、`GET /api/preview` | 生成需会话；预览凭 HMAC token | 草稿预览链接，见[预览链接](/preview-links) |
 | Webmention | `POST /api/webmention`、`GET /api/webmention`、`/api/admin/webmentions/*` | 接收公开；后台管理需会话 | 抓取来源页并校验链接后收录，见[Webmention](/webmention) |

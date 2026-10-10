@@ -7,7 +7,7 @@ description: "了解 Qingyu'Blog 的整体架构设计"
 
 ```text
 ├── public/                          # 站点本体（部署目录，根目录直接服务其内容）
-│   ├── index.html                   # 页面入口（?v=2.10.63 版本化资源 + ARD/AI Catalog 发现链接）
+│   ├── index.html                   # 页面入口（?v=2.10.100 版本化资源 + ARD/AI Catalog 发现链接）
 │   ├── config.js / config.min.js    # 全站配置
 │   ├── style.css / style.min.css    # 前台样式
 │   ├── app.js / app.min.js          # 前台逻辑（真实路径路由 + 渲染）
@@ -104,6 +104,20 @@ flowchart LR
 - **多语言**：5 种语言，自动识别浏览器语言（桌面 🌐 图标弹层 / 手机原生下拉），选择存 `blog.locale`
 - **AI 文章摘要**：文章页一键生成内容摘要（单篇缓存 30 天），AI 不可用自动隐藏入口
 - **全站音乐播放器**：右下角悬浮音符按钮（缩进窗口外露出一点，悬停/点击滑出）→ 弹出面板（曲目信息 / 进度 / 播放控制 / 音量 / 播放列表）；自动连播、记忆上次曲目与进度、音量持久化；无音乐隐藏、后台路由收起（独立模块 `music-player.js`，通过 `qy:route` 事件同步路由）
+
+### 首屏弱网兜底（v2.10.93 / v2.10.97）
+
+首屏关键资源（config / posts / i18n / app / style）在 `index.html` 中**显式 `preload`**，不再靠脚本探测器猜时机：
+
+| 措施 | 行为 |
+|------|------|
+| 云端接口超时截止 | **8 秒**后放弃等待（不再无限挂起），渲染可手动重试的失败页，**不自动死循环拉取** |
+| 文章正文保护 | 单独 **10 秒**超时保护 |
+| 云端快照兜底 | 每次成功拉到云端文章 / 设置后写一份本地快照（最长用于 **12 小时**首屏）；下次打开**先用快照立即出内容**，后台并行刷新真实数据，拿到后覆盖重渲染 |
+
+<Note>
+实测排查结论：站点「打开慢」的主因是**线路丢包，不是项目代码**。首屏兜底是为了在丢包时优雅降级，而非掩盖性能问题。
+</Note>
 
 ### 资源按需加载
 
@@ -214,6 +228,10 @@ KV 未绑定时频控会**静默失效**（服务端打印告警）；AI 的全�
 | 带 `?v=`（版本化资源）或位于 `/fonts/`、`/flags/`、`/libs/smoji/` | `public, max-age=31536000, immutable` |
 | 其他带扩展名的静态文件 | `public, max-age=3600, stale-while-revalidate=86400` |
 | 无扩展名的 HTML 入口 | `no-cache`（每次重新验证，ETag 命中即 304） |
+
+<Warning>
+**Workers 部署下的已知限制**：Workers 的静态资源会在 Worker 代码之前被平台直接返回，因此上表中 `?v=` 资源的强缓存规则**实际未生效**，线上返回的是 `public, must-revalidate, max-age=0`。让缓存逻辑先执行需要 `run_worker_first = true`，该字段要求 wrangler ≥ 3.94（wrangler 4.x 在本项目部署会失败），因此**暂无法修复**，已在主仓库 `wrangler.workers.toml` 与守卫测试中写明原因。
+</Warning>
 
 安全响应头清单（`securityHeaders()`，API 响应与静态响应共用）：`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: SAMEORIGIN`、`Cross-Origin-Opener-Policy: same-origin`、`Content-Security-Policy`（含 `object-src 'none'`、`frame-ancestors 'none'`、`form-action 'self'`）。
 
